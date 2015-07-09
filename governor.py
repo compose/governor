@@ -23,7 +23,9 @@ def stop_postgresql():
     postgresql.stop()
 atexit.register(stop_postgresql)
 
+
 # wait for etcd to be available
+logging.info("Governor Starting up: Connect to Etcd")
 etcd_ready = False
 while not etcd_ready:
     try:
@@ -35,12 +37,17 @@ while not etcd_ready:
 
 # is data directory empty?
 if postgresql.data_directory_empty():
+    logging.info("Governor Starting up: Empty Data Dir")
     # racing to initialize
     if etcd.race("/initialize", postgresql.name):
+        logging.info("Governor Starting up: Initialise Postgres")
         postgresql.initialize()
+        logging.info("Governor Starting up: Initialise Complete")
         etcd.take_leader(postgresql.name)
+        logging.info("Governor Starting up: Starting Postgres")
         postgresql.start()
     else:
+        logging.info("Governor Starting up: Sync Postgres from Leader")
         synced_from_leader = False
         while not synced_from_leader:
             leader = etcd.current_leader()
@@ -48,15 +55,20 @@ if postgresql.data_directory_empty():
                 time.sleep(5)
                 continue
             if postgresql.sync_from_leader(leader):
+                logging.info("Governor Starting up: Sync Completed")
                 postgresql.write_recovery_conf(leader)
+                logging.info("Governor Starting up: Starting Postgres")
                 postgresql.start()
                 synced_from_leader = True
             else:
                 time.sleep(5)
 else:
+    logging.info("Governor Starting up: Existing Data Dir")
     postgresql.follow_no_leader()
+    logging.info("Governor Starting up: Starting Postgres")
     postgresql.start()
 
+logging.info("Governor Running: Starting Running Loop")
 while True:
     logging.info(ha.run_cycle())
 
