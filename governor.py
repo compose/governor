@@ -7,8 +7,9 @@ from helpers.etcd import Etcd
 from helpers.postgresql import Postgresql
 from helpers.ha import Ha
 
+LOG_LEVEL = logging.DEBUG if os.getenv('DEBUG', None) else logging.INFO
 
-logging.basicConfig(format='%(asctime)s %(levelname)s: %(message)s', level=logging.INFO)
+logging.basicConfig(format='%(asctime)s %(levelname)s: %(message)s', level=LOG_LEVEL)
 
 f = open(sys.argv[1], "r")
 config = yaml.load(f.read())
@@ -40,6 +41,7 @@ if postgresql.data_directory_empty():
     logging.info("Governor Starting up: Empty Data Dir")
     # racing to initialize
     if etcd.race("/initialize", postgresql.name):
+        logging.info("Governor Starting up: Initialisation Race ... WON!!!")
         logging.info("Governor Starting up: Initialise Postgres")
         postgresql.initialize()
         logging.info("Governor Starting up: Initialise Complete")
@@ -47,6 +49,7 @@ if postgresql.data_directory_empty():
         logging.info("Governor Starting up: Starting Postgres")
         postgresql.start()
     else:
+        logging.info("Governor Starting up: Initialisation Race ... LOST")
         logging.info("Governor Starting up: Sync Postgres from Leader")
         synced_from_leader = False
         while not synced_from_leader:
@@ -70,10 +73,11 @@ else:
 
 logging.info("Governor Running: Starting Running Loop")
 while True:
-    logging.info(ha.run_cycle())
+    logging.info("Governor Running: %s" % ha.run_cycle())
 
     # create replication slots
     if postgresql.is_leader():
+        logging.info("Governor Running: I am the Leader")
         for node in etcd.get_client_path("/members?recursive=true")["node"]["nodes"]:
             member = node["key"].split('/')[-1]
             if member != postgresql.name:
