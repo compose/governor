@@ -8,7 +8,7 @@ haproxy_status:
 postgresql:
   name: postgresql0
   listen: 127.0.0.1:5432
-  data_dir: data/postgresql0
+  data_dir: data/postgres0
   maximum_lag_on_failover: 1048576 # 1 megabyte in bytes
   replication:
     username: replicator
