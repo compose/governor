@@ -58,6 +58,9 @@ For an example file, see `postgres0.yml`.  Below is an explanation of settings:
   * *recovery_conf*: configuration settings written to recovery.conf when configuring follower
   * *parameters*: list of configuration settings for Postgres
 
+* *haproxy_status*
+  * *listen*: ip address + port for haproxy check. Must be accesible for haproxy.
+
 ## Replication choices
 
 Governor uses Postgres' streaming replication.  By default, this replication is asynchronous.  For more information, see the [Postgres documentation on streaming replication](http://www.postgresql.org/docs/current/static/warm-standby.html#STREAMING-REPLICATION). 
