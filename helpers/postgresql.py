@@ -57,7 +57,7 @@ class Postgresql:
     def initialize(self):
         if os.system("initdb -D %s" % self.data_dir) == 0:
             # start Postgres without options to setup replication user indepedent of other system settings
-            os.system("pg_ctl start -w -D %s" % self.data_dir)
+            os.system("pg_ctl start -w -D %s -o '%s'" % (self.data_dir, self.server_options()))
             self.create_replication_user()
             os.system("pg_ctl stop -w -m fast -D %s" % self.data_dir)
             self.write_pg_hba()
@@ -95,10 +95,7 @@ class Postgresql:
             os.remove(pid_path)
             logger.info("Removed %s" % pid_path)
 
-        command_code = os.system("postgres -D %s %s &" % (self.data_dir, self.server_options()))
-        while not self.is_running():
-            time.sleep(5)
-        return command_code != 0
+        return os.system("pg_ctl start -w -D %s -o '%s'" % (self.data_dir, self.server_options())) == 0
 
     def stop(self):
         return os.system("pg_ctl stop -w -D %s -m fast -w" % self.data_dir) != 0
