@@ -2,7 +2,11 @@ loop_wait: 10
 etcd:
   scope: batman
   ttl: 30
-  host: 127.0.0.1:4001
+  # if running etcd with authentication, application authentication by uncommenting the following
+  # authentication:
+    # username: myusername
+    # password: mypassword
+  endpoint: http://localhost:4001
 haproxy_status:
   listen: 127.0.0.1:15433
 postgresql:

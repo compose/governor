@@ -44,7 +44,10 @@ For an example file, see `postgres0.yml`.  Below is an explanation of settings:
 * *etcd*
   * *scope*: the relative path used on etcd's http api for this deployment, thus you can run multiple HA deployments from a single etcd
   * *ttl*: the TTL to acquire the leader lock.  Think of it as the length of time before automatic failover process is initiated.
-  * *host*: the host:port for the etcd endpoint
+  * *endpoint*: the scheme://host:port for the etcd endpoint where scheme is https or http
+  * *authentication*: optional if etcd is protected by HTTP basic auth
+    * *username*: username for accessing etcd
+    * *password*: password for accessing etcd
 
 * *postgresql*
   * *name*: the name of the Postgres host, must be unique for the cluster

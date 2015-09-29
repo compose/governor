@@ -1,4 +1,4 @@
-import urllib2, json, os, time
+import urllib2, json, os, time, base64
 import logging
 from urllib import urlencode
 import helpers.errors
@@ -8,7 +8,8 @@ logger = logging.getLogger(__name__)
 class Etcd:
     def __init__(self, config):
         self.scope = config["scope"]
-        self.host = config["host"]
+        self.endpoint = config["endpoint"]
+        self.authentication = config["authentication"]
         self.ttl = config["ttl"]
 
     def get_client_path(self, path, max_attempts=1):
@@ -17,7 +18,11 @@ class Etcd:
 
         while True:
             try:
-                response = urllib2.urlopen(self.client_url(path)).read()
+                request = urllib2.Request(self.client_url(path))
+                if self.authentication is not None:
+                    base64string = base64.encodestring('%s:%s' % (self.authentication["username"], self.authentication["password"])).replace('\n', '')
+                    request.add_header("Authorization", "Basic %s" % base64string)
+                response = urllib2.urlopen(request).read()
                 break
             except (urllib2.HTTPError, urllib2.URLError) as e:
                 attempts += 1
@@ -32,13 +37,15 @@ class Etcd:
             return response
 
     def put_client_path(self, path, data):
-        opener = urllib2.build_opener(urllib2.HTTPHandler)
         request = urllib2.Request(self.client_url(path), data=urlencode(data).replace("false", "False"))
+        if self.authentication is not None:
+            base64string = base64.encodestring('%s:%s' % (self.authentication["username"], self.authentication["password"])).replace('\n', '')
+            request.add_header("Authorization", "Basic %s" % base64string)
         request.get_method = lambda: 'PUT'
-        opener.open(request)
+        urllib2.urlopen(request).read()
 
     def client_url(self, path):
-        return "http://%s/v2/keys/service/%s%s" % (self.host, self.scope, path)
+        return "%s/v2/keys/service/%s%s" % (self.endpoint, self.scope, path)
 
     def current_leader(self):
         try:
