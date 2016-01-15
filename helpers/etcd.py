@@ -9,7 +9,10 @@ class Etcd:
     def __init__(self, config):
         self.scope = config["scope"]
         self.endpoint = config["endpoint"]
-        self.authentication = config["authentication"]
+        if config.has_key("authentication"):
+            self.authentication = config["authentication"]
+        else:
+            self.authentication = None
         self.ttl = config["ttl"]
 
     def get_client_path(self, path, max_attempts=1):
