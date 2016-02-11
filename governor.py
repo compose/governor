@@ -24,14 +24,16 @@ def stop_postgresql():
 atexit.register(stop_postgresql)
 
 # wait for etcd to be available
-etcd_ready = False
-while not etcd_ready:
-    try:
-        etcd.touch_member(postgresql.name, postgresql.connection_string)
-        etcd_ready = True
-    except urllib2.URLError:
-        logging.info("waiting on etcd")
-        time.sleep(5)
+def wait_for_etcd():
+    etcd_ready = False
+    while not etcd_ready:
+        try:
+            etcd.touch_member(postgresql.name, postgresql.connection_string)
+            etcd_ready = True
+        except urllib2.URLError:
+            logging.info("waiting on etcd")
+            time.sleep(5)
+wait_for_etcd()
 
 # is data directory empty?
 if postgresql.data_directory_empty():
@@ -58,15 +60,20 @@ else:
     postgresql.start()
 
 while True:
-    logging.info(ha.run_cycle())
+    try:
+        logging.info(ha.run_cycle())
 
-    # create replication slots
-    if postgresql.is_leader():
-        for node in etcd.get_client_path("/members?recursive=true")["node"]["nodes"]:
-            member = node["key"].split('/')[-1]
-            if member != postgresql.name:
-                postgresql.query("DO LANGUAGE plpgsql $$DECLARE somevar VARCHAR; BEGIN SELECT slot_name INTO somevar FROM pg_replication_slots WHERE slot_name = '%(slot)s' LIMIT 1; IF NOT FOUND THEN PERFORM pg_create_physical_replication_slot('%(slot)s'); END IF; END$$;" % {"slot": member})
+        # create replication slots
+        if postgresql.is_leader():
+            for node in etcd.get_client_path("/members?recursive=true")["node"]["nodes"]:
+                member = node["key"].split('/')[-1]
+                if member != postgresql.name:
+                    postgresql.query("DO LANGUAGE plpgsql $$DECLARE somevar VARCHAR; BEGIN SELECT slot_name INTO somevar FROM pg_replication_slots WHERE slot_name = '%(slot)s' LIMIT 1; IF NOT FOUND THEN PERFORM pg_create_physical_replication_slot('%(slot)s'); END IF; END$$;" % {"slot": member})
 
-    etcd.touch_member(postgresql.name, postgresql.connection_string)
+        etcd.touch_member(postgresql.name, postgresql.connection_string)
 
-    time.sleep(config["loop_wait"])
+        time.sleep(config["loop_wait"])
+    except urllib2.URLError:
+        logging.info("Lost connection to etcd, setting no leader and waiting on etcd")
+        postgresql.follow_no_leader()
+        wait_for_etcd()
