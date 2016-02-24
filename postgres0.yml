@@ -6,7 +6,9 @@ etcd:
   # authentication:
     # username: myusername
     # password: mypassword
-  endpoint: http://localhost:4001
+  endpoints:
+    - http://localhost:4001
+  timeout: 5
 haproxy_status:
   listen: 127.0.0.1:15432
 postgresql:

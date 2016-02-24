@@ -7,34 +7,14 @@ import (
 )
 
 type Configuration struct {
-	LoopWait   int              `yaml:"loop_wait"`
-	Etcd       EtcdConfig       `yaml:"etcd"`
-	Haproxy    HaproxyConfig    `yaml:"haproxy_status"`
-	Postgresql PostgresqlConfig `yaml:"postgresql"`
-}
-
-type EtcdConfig struct {
-	Scope string
-	Ttl   int
+	LoopWait   int           `yaml:"loop_wait"`
+	Etcd       Etcd          `yaml:"etcd"`
+	Haproxy    HaproxyConfig `yaml:"haproxy_status"`
+	Postgresql Postgresql    `yaml:"postgresql"`
 }
 
 type HaproxyConfig struct {
 	Listen string
-}
-
-type PostgresqlConfig struct {
-	Name                 string                    `yaml:"name"`
-	Listen               string                    `yaml:"listen"`
-	DataDirectory        string                    `yaml:"data_dir"`
-	MaximumLagOnFailover int                       `yaml:"maximum_lag_on_failover"`
-	Replication          PostgresqlReplicationInfo `yaml:"replication"`
-	Parameters           map[string]interface{}    `yaml:"parameters"`
-}
-
-type PostgresqlReplicationInfo struct {
-	Username string `yaml:"username"`
-	Password string `yaml:"password"`
-	Network  string `yaml:"network"`
 }
 
 func LoadConfiguration(path string) (Configuration, error) {

@@ -2,39 +2,65 @@ package main
 
 import (
 	"database/sql"
-	//"log"
+	"io/ioutil"
+	"log"
+	"os"
+	"os/exec"
 )
 
 type Postgresql struct {
-	name     string
-	host     string
-	port     int
-	data_dir string
-	//replication ReplicationInfo
-	config     map[string]string
-	connection *sql.DB
+	Name                 string                    `yaml:"name"`
+	Listen               string                    `yaml:"listen"`
+	DataDirectory        string                    `yaml:"data_dir"`
+	MaximumLagOnFailover int                       `yaml:"maximum_lag_on_failover"`
+	Replication          PostgresqlReplicationInfo `yaml:"replication"`
+	Parameters           map[string]interface{}    `yaml:"parameters"`
+	connection           *sql.DB
 }
 
-func createPostgresql(config Configuration) (Postgresql, error) {
-	return Postgresql{}, nil
+type PostgresqlReplicationInfo struct {
+	Username string `yaml:"username"`
+	Password string `yaml:"password"`
+	Network  string `yaml:"network"`
 }
 
-func (*Postgresql) initialize() error {
+func (p *Postgresql) Initialize() error {
+	cmd := exec.Command("initdb", "-D", p.DataDirectory)
+	err := cmd.Start()
+	if err != nil {
+		return err
+	}
+	log.Printf("Initializing Postgres database.")
+	err = cmd.Wait()
+	return err
+}
+
+func (p *Postgresql) Start() error {
 	return nil
 }
 
-func (*Postgresql) start() error {
+func (p *Postgresql) Stop() error {
 	return nil
 }
 
-func (*Postgresql) stop() error {
+func (p *Postgresql) Promote() error {
 	return nil
 }
 
-func (*Postgresql) promote() error {
+func (p *Postgresql) Demote() error {
 	return nil
 }
 
-func (*Postgresql) demote() error {
-	return nil
+func (p *Postgresql) NeedsInitialization() bool {
+	files, err := ioutil.ReadDir(p.DataDirectory)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return true
+		}
+		log.Fatal(err)
+	}
+	for _, file := range files {
+		log.Printf(file.Name())
+	}
+	return false
 }

@@ -1,12 +1,13 @@
 package main
 
 import (
+	"flag"
 	//"fmt"
 	"io"
 	"log"
 	"os"
 	//"os/exec"
-	//"time"
+	"time"
 )
 
 func IsEmpty(name string) (bool, error) {
@@ -23,24 +24,29 @@ func IsEmpty(name string) (bool, error) {
 	return false, err // Either not empty or error, suits both cases
 }
 
+var configuration_file = flag.String("config", "./postgresql0.yml", "the yaml based configuration file.")
+
 func main() {
 	configuration, err := LoadConfiguration("postgres0.yml")
 	if err != nil {
 		log.Fatalf("Error loading governor configuration: %v", err)
 	}
 
-	log.Printf("Configuration is: %v", configuration.Postgresql.MaximumLagOnFailover)
+	for !configuration.Etcd.Available() {
+		log.Printf("Etcd is unreachable.  Waiting 10 seconds and trying again at %v", configuration.Etcd.Endpoints)
+		time.Sleep(10 * time.Second)
+	}
 
-	//postgresql, err := createPostgresql(configuration)
-	//if err != nil {
-	//log.Fatal("Error create Postgresql object: %v", err)
-	//}
+	if configuration.Postgresql.NeedsInitialization() {
+		if configuration.Etcd.WinInitializationRace(configuration.Postgresql.Name) {
+			err = configuration.Postgresql.Initialize()
+			if err != nil {
+				log.Fatal("Error initializing Postgresql database: %v", err)
+			}
+		}
+	}
 
-	//// if data is empty and etcd is empty
-	//err = postgresql.initialize()
-	//if err != nil {
-	//log.Fatal("Error initializing Postgresql database: %v", err)
-	//}
+	log.Fatalf("End of post initialization logic.")
 
 	//ha, err := CreateHA(configuration, etcd, postgresql)
 
