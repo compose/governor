@@ -50,3 +50,17 @@ func (e *Etcd) WinInitializationRace(nodeName string) bool {
 	}
 	return true
 }
+
+func (e *Etcd) Leader() (Leader, error) {
+	var leader Leader
+	leader_name, err := e.client.Get(context.Background(), "/leader", nil)
+	if err != nil {
+		return leader, err
+	}
+	leader_connection_string, err := e.client.Get(context.Background(), fmt.Sprintf("/members/%s", leader_name.Node.Value), nil)
+	if err != nil {
+		return leader, err
+	}
+	log.Fatal(leader_connection_string)
+	return Leader{Name: leader_name.Node.Value, ConnectionString: leader_connection_string.Node.Value}, err
+}

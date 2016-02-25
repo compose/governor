@@ -3,26 +3,10 @@ package main
 import (
 	"flag"
 	//"fmt"
-	"io"
 	"log"
-	"os"
 	//"os/exec"
 	"time"
 )
-
-func IsEmpty(name string) (bool, error) {
-	f, err := os.Open(name)
-	if err != nil {
-		return false, err
-	}
-	defer f.Close()
-
-	_, err = f.Readdir(1)
-	if err == io.EOF {
-		return true, nil
-	}
-	return false, err // Either not empty or error, suits both cases
-}
 
 var configuration_file = flag.String("config", "./postgresql0.yml", "the yaml based configuration file.")
 
@@ -38,17 +22,29 @@ func main() {
 	}
 
 	if configuration.Postgresql.NeedsInitialization() {
+		log.Printf("Postgres needs to initialize; racing to etcd initialization key.")
 		if configuration.Etcd.WinInitializationRace(configuration.Postgresql.Name) {
 			err = configuration.Postgresql.Initialize()
 			if err != nil {
 				log.Fatal("Error initializing Postgresql database: %v", err)
 			}
+		} else {
+			for configuration.Postgresql.NeedsInitialization() {
+				log.Printf("Getting leader from Etcd")
+				leader, err := configuration.Etcd.Leader()
+				if err != nil {
+					log.Printf("Error getting leader from Etcd: %v", err)
+					time.Sleep(10 * time.Second)
+				}
+				err = configuration.Postgresql.SyncFromLeader(leader)
+				if err != nil {
+					time.Sleep(10 * time.Second)
+				}
+			}
 		}
 	}
 
-	log.Fatalf("End of post initialization logic.")
-
-	//ha, err := CreateHA(configuration, etcd, postgresql)
+	//ha, err := CreateHA(configuration)
 
 	//cmd := startPostgres()
 	//current_pid := os.Getpid()

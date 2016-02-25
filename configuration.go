@@ -17,6 +17,11 @@ type HaproxyConfig struct {
 	Listen string
 }
 
+type Leader struct {
+	Name             string
+	ConnectionString string
+}
+
 func LoadConfiguration(path string) (Configuration, error) {
 	var configuration Configuration
 

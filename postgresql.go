@@ -24,6 +24,11 @@ type PostgresqlReplicationInfo struct {
 	Network  string `yaml:"network"`
 }
 
+type ClusterMember struct {
+	Name             string
+	ConnectionString string
+}
+
 func (p *Postgresql) Initialize() error {
 	cmd := exec.Command("initdb", "-D", p.DataDirectory)
 	err := cmd.Start()
@@ -51,6 +56,17 @@ func (p *Postgresql) Demote() error {
 	return nil
 }
 
+func (p *Postgresql) SyncFromLeader(leader Leader) error {
+	cmd := exec.Command("pg_basebackup", leader.ConnectionString)
+	err := cmd.Start()
+	if err != nil {
+		return err
+	}
+	log.Printf("Syncing Postgres database from leader.")
+	err = cmd.Wait()
+	return err
+}
+
 func (p *Postgresql) NeedsInitialization() bool {
 	files, err := ioutil.ReadDir(p.DataDirectory)
 	if err != nil {
@@ -59,8 +75,5 @@ func (p *Postgresql) NeedsInitialization() bool {
 		}
 		log.Fatal(err)
 	}
-	for _, file := range files {
-		log.Printf(file.Name())
-	}
-	return false
+	return len(files) == 0
 }
