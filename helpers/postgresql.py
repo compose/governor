@@ -55,7 +55,7 @@ class Postgresql:
         return not os.path.exists(self.data_dir) or os.listdir(self.data_dir) == []
 
     def initialize(self):
-        if os.system("initdb -D %s" % self.data_dir) == 0:
+        if os.system("initdb %s" % self.initdb_options()) == 0:
             # start Postgres without options to setup replication user indepedent of other system settings
             os.system("pg_ctl start -w -D %s -o '%s'" % (self.data_dir, self.server_options()))
             self.create_replication_user()
@@ -110,6 +110,13 @@ class Postgresql:
         options = "-c listen_addresses=%s -c port=%s" % (self.host, self.port)
         for setting, value in self.config["parameters"].iteritems():
             options += " -c \"%s=%s\"" % (setting, value)
+        return options
+
+    def initdb_options(self):
+        options = "-D %s" % self.data_dir
+        if "initdb_parameters" in self.config:
+            for param in self.config["initdb_parameters"]:
+                options += " \"%s\"" % param
         return options
 
     def is_healthy(self):

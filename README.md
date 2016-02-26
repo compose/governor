@@ -60,6 +60,7 @@ For an example file, see `postgres0.yml`.  Below is an explanation of settings:
     * *network*: network setting for replication in pg_hba.conf
   * *recovery_conf*: configuration settings written to recovery.conf when configuring follower
   * *parameters*: list of configuration settings for Postgres
+  * *initdb_parameters*: list of custom parameters for the initdb during initialization
 
 * *haproxy_status*
   * *listen*: ip address + port for haproxy check. Must be accesible for haproxy.

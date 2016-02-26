@@ -29,3 +29,5 @@ postgresql:
     archive_timeout: 1800s
     max_replication_slots: 5
     hot_standby: "on"
+  initdb_parameters:
+    - '--encoding=SQL_ASCII'
