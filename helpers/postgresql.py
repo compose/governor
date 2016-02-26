@@ -205,4 +205,7 @@ primary_conninfo = 'user=%(user)s password=%(password)s host=%(hostname)s port=%
         return self.query("SELECT pg_last_xlog_replay_location() - '0/0000000'::pg_lsn;").fetchone()[0]
 
     def last_operation(self):
-        return self.query("SELECT pg_current_xlog_location() - '0/00000'::pg_lsn;").fetchone()[0]
+        if self.is_leader():
+            return self.query("SELECT pg_current_xlog_location() - '0/00000'::pg_lsn;").fetchone()[0]
+        else:
+            return self.xlog_position()
