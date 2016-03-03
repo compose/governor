@@ -50,6 +50,7 @@ For an example file, see `postgres0.yml`.  Below is an explanation of settings:
     * *password*: password for accessing etcd
 
 * *postgresql*
+  * *use_unix_socket*: set to true if governor shall connect to postgres via local unix socket instead of TCP/IP
   * *name*: the name of the Postgres host, must be unique for the cluster
   * *listen*: ip address + port that Postgres listening. Must be accessible from other nodes in the cluster if using streaming replication.
   * *data_dir*: file path to initialize and store Postgres data files
