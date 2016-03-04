@@ -40,6 +40,7 @@ class Ha:
         try:
             if self.state_handler.is_healthy():
                 if self.is_unlocked():
+                    logging.info("Leader is unlocked - starting election")
                     if self.state_handler.is_healthiest_node(self.etcd):
                         if self.acquire_lock():
                             if not self.state_handler.is_leader():
