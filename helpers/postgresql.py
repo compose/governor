@@ -23,7 +23,6 @@ class Postgresql:
 
     def cursor(self):
         if not self.cursor_holder:
-            print(self.local_connection_string())
             self.conn = psycopg2.connect(self.local_connection_string())
             self.conn.autocommit = True
             self.cursor_holder = self.conn.cursor()
