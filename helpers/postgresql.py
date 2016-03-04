@@ -24,7 +24,10 @@ class Postgresql:
     def cursor(self):
         if not self.cursor_holder:
             if self.config.get("use_unix_socket"):
-                self.conn = psycopg2.connect("user=postgres")
+                self.connect_string = "user=postgres port=%s " % (self.port)
+                if self.config["parameters"].get("unix_socket_directories"):
+                    self.connect_string += "host=%s" % (self.config["parameters"]["unix_socket_directories"].split(" ")[0])
+                self.conn = psycopg2.connect(self.connect_string)
             else:
                 self.conn = psycopg2.connect("postgres://%s:%s/postgres" % (self.host, self.port))
             self.conn.autocommit = True
