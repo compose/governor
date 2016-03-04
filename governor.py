@@ -24,20 +24,20 @@ def stop_postgresql():
 atexit.register(stop_postgresql)
 
 # wait for etcd to be available
-def wait_for_etcd():
+def wait_for_etcd(message):
     etcd_ready = False
     while not etcd_ready:
         try:
             etcd.touch_member(postgresql.name, postgresql.connection_string)
             etcd_ready = True
         except urllib2.URLError:
-            logging.info("waiting on etcd")
+            logging.info("waiting on etcd: %s" % message)
             time.sleep(5)
-wait_for_etcd()
 
 # is data directory empty?
 if postgresql.data_directory_empty():
     # racing to initialize
+    wait_for_etcd("cannot initialize member without ETCD")
     if etcd.race("/initialize", postgresql.name):
         postgresql.initialize()
         etcd.take_leader(postgresql.name)
@@ -59,6 +59,7 @@ else:
     postgresql.follow_no_leader()
     postgresql.start()
 
+wait_for_etcd("running in readonly mode; cannot participate in cluster HA without etcd")
 while True:
     try:
         logging.info(ha.run_cycle())
@@ -76,4 +77,4 @@ while True:
     except urllib2.URLError:
         logging.info("Lost connection to etcd, setting no leader and waiting on etcd")
         postgresql.follow_no_leader()
-        wait_for_etcd()
+        wait_for_etcd("running in readonly mode; cannot participate in cluster HA without etcd")
