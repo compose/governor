@@ -23,17 +23,23 @@ class Postgresql:
 
     def cursor(self):
         if not self.cursor_holder:
-            if self.config.get("use_unix_socket"):
-                self.connect_string = "user=postgres port=%s " % (self.port)
-                if self.config["parameters"].get("unix_socket_directories"):
-                    self.connect_string += "host=%s" % (self.config["parameters"]["unix_socket_directories"].split(" ")[0])
-                self.conn = psycopg2.connect(self.connect_string)
-            else:
-                self.conn = psycopg2.connect("postgres://%s:%s/postgres" % (self.host, self.port))
+            print(self.local_connection_string())
+            self.conn = psycopg2.connect(self.local_connection_string())
             self.conn.autocommit = True
             self.cursor_holder = self.conn.cursor()
 
         return self.cursor_holder
+
+    def local_connection_string(self):
+        connection_string = ["dbname=postgres", "port=%s" % self.port]
+
+        if self.config.get("use_tcp_for_local_connection") or self.config["parameters"].get("unix_socket_directories") == "":
+            connection_string.append("host=%s" % self.host)
+        elif self.config["parameters"].get("unix_socket_directories"):
+            explicit_socket_directory = self.config["parameters"]["unix_socket_directories"].split(" ")[0]
+            connection_string.append("host=%s" % explicit_socket_directory)
+
+        return " ".join(connection_string)
 
     def disconnect(self):
         try:

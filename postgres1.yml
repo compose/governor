@@ -10,11 +10,11 @@ etcd:
 haproxy_status:
   listen: 127.0.0.1:15433
 postgresql:
-  # use_unix_socket: true
   name: postgresql1
   listen: 127.0.0.1:5433
   data_dir: data/postgres1
   maximum_lag_on_failover: 1048576 # 1 megabyte in bytes
+  # use_tcp_for_local_connection: true
   replication:
     username: replicator
     password: rep-pass
