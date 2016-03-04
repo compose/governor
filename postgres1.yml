@@ -10,6 +10,7 @@ etcd:
 haproxy_status:
   listen: 127.0.0.1:15433
 postgresql:
+  # use_unix_socket: true
   name: postgresql1
   listen: 127.0.0.1:5433
   data_dir: data/postgres1
