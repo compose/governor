@@ -24,7 +24,7 @@ postgresql:
   parameters:
     archive_mode: "on"
     wal_level: hot_standby
-    synchronous_commit: "off"
+    synchronous_commit: "local"
     synchronous_standby_names: '*'
     archive_command: mkdir -p ../wal_archive && cp %p ../wal_archive/%f
     max_wal_senders: 5
