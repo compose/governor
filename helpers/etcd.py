@@ -30,7 +30,7 @@ class Etcd:
             except (urllib2.HTTPError, urllib2.URLError) as e:
                 attempts += 1
                 if attempts < max_attempts:
-                    logger.info("Failed to return %s, trying again. (%s of %s)" % (path, attempts, max_attempts))
+                    logger.warning("Failed to return %s, trying again. (%s of %s)" % (path, attempts, max_attempts))
                     time.sleep(3)
                 else:
                     raise e
