@@ -89,6 +89,6 @@ while True:
 
         time.sleep(config["loop_wait"])
     except urllib2.URLError:
-        logging.info("Lost connection to etcd, setting no leader and waiting on etcd")
+        logging.warning("Lost connection to etcd, setting no leader and waiting on etcd")
         postgresql.follow_no_leader()
         wait_for_etcd("running in readonly mode; cannot participate in cluster HA without etcd")
