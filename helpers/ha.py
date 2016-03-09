@@ -34,7 +34,7 @@ class Ha:
         return self.etcd.am_i_leader(self.state_handler.name)
 
     def fetch_current_leader(self):
-            return self.etcd.current_leader()
+        return self.etcd.current_leader()
 
     def run_cycle(self):
         try:
