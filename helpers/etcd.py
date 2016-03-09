@@ -126,7 +126,15 @@ class Etcd:
             #return False
 
     def race(self, path, value):
-        try:
-            return self.put_client_path(path, {"prevExist": False, "value": value}) == None
-        except urllib2.HTTPError:
-            return False
+        while True:
+            try:
+                return self.put_client_path(path, {"prevExist": False, "value": value}) == None
+            except urllib2.HTTPError as e:
+                if e.code == 412:
+                    return False
+                else:
+                    logger.warning("etcd is not ready for connections")
+                    time.sleep(10)
+            except urllib2.URLError:
+                    logger.warning("Issue connecting to etcd")
+                    time.sleep(10)
