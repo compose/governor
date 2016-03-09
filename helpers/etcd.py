@@ -61,6 +61,8 @@ class Etcd:
             if e.code == 404:
                 return None
             raise helpers.errors.CurrentLeaderError("Etcd is not responding properly")
+        except urllib2.URLError:
+            raise helpers.errors.CurrentLeaderError("Etcd is not responding properly")
 
     def members(self):
         try:
@@ -75,6 +77,9 @@ class Etcd:
             if e.code == 404:
                 return None
             raise helpers.errors.CurrentLeaderError("Etcd is not responding properly")
+        except urllib2.URLError:
+            raise helpers.errors.CurrentLeaderError("Etcd is not responding properly")
+
 
     def touch_member(self, member, connection_string):
         self.put_client_path("/members/%s" % member, {"value": connection_string, "ttl": self.ttl})
@@ -89,12 +94,14 @@ class Etcd:
             if e.code == 412:
                 logger.info("Could not take out TTL lock: %s" % e)
             return False
+        except urllib2.URLError:
+            return False
 
     def update_leader(self, state_handler):
         try:
             self.put_client_path("/leader", {"value": state_handler.name, "ttl": self.ttl, "prevValue": state_handler.name})
             self.put_client_path("/optime/leader", {"value": state_handler.last_operation()})
-        except urllib2.HTTPError:
+        except (urllib2.HTTPError, urllib2.URLError) as e:
             logger.error("Error updating leader lock and optime on ETCD for primary.")
             return False
 
@@ -103,6 +110,9 @@ class Etcd:
             return int(self.get_client_path("/optime/leader")["node"]["value"])
         except urllib2.HTTPError as e:
             if e.code == 404:
+                logger.error("Error updating TTL on ETCD for primary.")
+                return None
+        except urllib2.URLError:
                 logger.error("Error updating TTL on ETCD for primary.")
                 return None
 
@@ -114,19 +124,34 @@ class Etcd:
             if e.code == 404:
                 return True
             return False
-        except ValueError as e:
+        except urllib2.URLError:
+            return False
+        except ValueError:
             return False
 
     def am_i_leader(self, value):
-        #try:
-           reponse = self.get_client_path("/leader")
-           logger.info("Lock owner: %s; I am %s" % (reponse["node"]["value"], value))
-           return reponse["node"]["value"] == value
-        #except Exception as e:
-            #return False
+        try:
+            reponse = self.get_client_path("/leader")
+            logger.info("Lock owner: %s; I am %s" % (reponse["node"]["value"], value))
+            return reponse["node"]["value"] == value
+        except urllib2.HTTPError:
+            logger.error("Couldn't reach etcd")
+            return False
+        except urllib2.URLError:
+            logger.error("Couldn't reach etcd")
+            return False
+
 
     def race(self, path, value):
-        try:
-            return self.put_client_path(path, {"prevExist": False, "value": value}) == None
-        except urllib2.HTTPError:
-            return False
+        while True:
+            try:
+                return self.put_client_path(path, {"prevExist": False, "value": value}) == None
+            except urllib2.HTTPError as e:
+                if e.code == 412:
+                    return False
+                else:
+                    logger.warning("etcd is not ready for connections")
+                    time.sleep(10)
+            except urllib2.URLError:
+                    logger.warning("Issue connecting to etcd")
+                    time.sleep(10)
