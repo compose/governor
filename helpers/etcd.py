@@ -14,6 +14,7 @@ class Etcd:
         else:
             self.authentication = None
         self.ttl = config["ttl"]
+        self.timeout = config["timeout"]
 
     def get_client_path(self, path, max_attempts=1):
         attempts = 0
@@ -25,7 +26,7 @@ class Etcd:
                 if self.authentication is not None:
                     base64string = base64.encodestring('%s:%s' % (self.authentication["username"], self.authentication["password"])).replace('\n', '')
                     request.add_header("Authorization", "Basic %s" % base64string)
-                response = urllib2.urlopen(request).read()
+                response = urllib2.urlopen(request, timeout=self.timeout).read()
                 break
             except (urllib2.HTTPError, urllib2.URLError) as e:
                 attempts += 1
@@ -45,7 +46,7 @@ class Etcd:
             base64string = base64.encodestring('%s:%s' % (self.authentication["username"], self.authentication["password"])).replace('\n', '')
             request.add_header("Authorization", "Basic %s" % base64string)
         request.get_method = lambda: 'PUT'
-        urllib2.urlopen(request).read()
+        urllib2.urlopen(request, timeout=self.timeout).read()
 
     def client_url(self, path):
         return "%s/v2/keys/service/%s%s" % (self.endpoint, self.scope, path)
