@@ -1,6 +1,7 @@
-package main
+package service
 
 import (
+	"bytes"
 	"database/sql"
 	"io/ioutil"
 	"log"
@@ -31,21 +32,41 @@ type ClusterMember struct {
 
 func (p *Postgresql) Initialize() error {
 	cmd := exec.Command("initdb", "-D", p.DataDirectory)
-	err := cmd.Start()
-	if err != nil {
+	if err := cmd.Start(); err != nil {
 		return err
 	}
 	log.Printf("Initializing Postgres database.")
-	err = cmd.Wait()
-	return err
+	return cmd.Wait()
 }
 
 func (p *Postgresql) Start() error {
-	return nil
+	if p.IsRunning() {
+		return AlreadyStartedError{
+			Service: "Postgresql",
+		}
+	}
+	pid_path = fmt.Sprintf("%s/postmaster.pid", p.DataDirectory)
+
+	if err := os.Stat(pid_path); err == nil {
+		log.Printf("Removed %s", pid_path)
+	}
+
+	cmd := exec.Command("pg_ctl start -w -D %s -o '%s'", p.DataDirectory, p.serverOptions()) == 0
+	return cmd.Wait()
 }
 
 func (p *Postgresql) Stop() error {
-	return nil
+	if !p.IsRunning() {
+		return NotRunningError{
+			Service: "Postgresql",
+		}
+	}
+	cmd := exec.Command("pg_ctl stop -w -D %s -m fast -w", p.DataDirectory)
+
+	return cmd.Wait()
+}
+
+func (p *Postgresql) Ping() error {
 }
 
 func (p *Postgresql) Promote() error {
@@ -76,4 +97,29 @@ func (p *Postgresql) NeedsInitialization() bool {
 		log.Fatal(err)
 	}
 	return len(files) == 0
+}
+
+func (p *Postgresql) IsRunning() bool {
+	cmd := exec.Command("pg_ctl status -D %s > /dev/null", p.dataDirectory)
+	if err := cmd.Run(); err != nil {
+		return false
+	}
+	return true
+}
+
+func (p *Postgresql) serverOptions() string {
+	var buffer bytes.Buffer
+	buffer.WriteString(fmt.Sprintf("-c listen_addresses=%s -c port=%s", self.host, self.port))
+	for setting, value := range p.parameters {
+		buffer.WriteString(fmt.Sprintf(" -c \"%s=%s\"", setting, value))
+	}
+	return buffer.String()
+}
+
+func (p *Postgresql) Host() string {
+	return strings.Split(p.Listen, ":")[0]
+}
+
+func (p *Postgresql) Port() string {
+	return strings.Split(p.Listen, ":")[1]
 }
