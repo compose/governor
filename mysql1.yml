@@ -1,0 +1,31 @@
+loop_wait: 10
+etcd:
+  scope: robin
+  ttl: 30
+  # if running etcd with authentication, application authentication by uncommenting the following
+  # authentication:
+    # username: myusername
+    # password: mypassword
+  endpoint: http://localhost:4001
+  timeout: 5
+haproxy_status:
+  listen: 127.0.0.1:15432
+mysql:
+  name: mysql1
+  listen: 127.0.0.1:3306
+  socket: /tmp/mysql1.sock
+  data_dir: ./data/mysql1
+  maximum_lag_on_failover: 1048576 # 1 megabyte in bytes
+  replication:
+    username: replicator
+    password: rep-pass
+    network: localhost
+  parameters:
+    lc-messages-dir: /usr/local/Cellar/mysql/5.7.12/share/mysql/english
+    explicit_defaults_for_timestamp: 1
+    server-id: 1
+    log-bin: mysql-bin
+    innodb-flush-log-at-trx-commit: 1
+    sync-binlog: 1
+    auto-increment-increment: 10
+    auto-increment-offset: 3

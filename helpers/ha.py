@@ -86,7 +86,7 @@ class Ha:
             else:
                 if not self.state_handler.is_running():
                     self.state_handler.start()
-                    return "postgresql was stopped.  starting again."
+                    return "database was stopped.  starting again."
                 return "no action.  not healthy enough to do anything."
         except helpers.errors.CurrentLeaderError:
             logger.error("failed to fetch current leader from etcd")
