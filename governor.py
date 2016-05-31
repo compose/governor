@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-import sys, os, yaml, time, urllib2, atexit
+import sys, os, yaml, time, urllib2, atexit, ssl
 import logging
 
 from helpers.etcd import Etcd
@@ -23,7 +23,8 @@ def wait_for_etcd(message, etcd, postgresql):
         try:
             etcd.touch_member(postgresql.name, postgresql.connection_string)
             etcd_ready = True
-        except urllib2.URLError:
+        except (urllib2.URLError, ssl.SSLError) as e:
+            logging.info(e)
             logging.info("waiting on etcd: %s" % message)
             time.sleep(5)
 
