@@ -1,4 +1,4 @@
-import urllib2, json, os, time, base64
+import urllib2, json, os, time, base64, ssl
 import logging
 from urllib import urlencode
 import helpers.errors
@@ -28,7 +28,7 @@ class Etcd:
                     request.add_header("Authorization", "Basic %s" % base64string)
                 response = urllib2.urlopen(request, timeout=self.timeout).read()
                 break
-            except (urllib2.HTTPError, urllib2.URLError) as e:
+            except (urllib2.HTTPError, urllib2.URLError, ssl.SSLError) as e:
                 attempts += 1
                 if attempts < max_attempts:
                     logger.warning("Failed to return %s, trying again. (%s of %s)" % (path, attempts, max_attempts))
@@ -61,7 +61,7 @@ class Etcd:
             if e.code == 404:
                 return None
             raise helpers.errors.CurrentLeaderError("Etcd is not responding properly")
-        except urllib2.URLError:
+        except (urllib2.URLError, ssl.SSLError):
             raise helpers.errors.CurrentLeaderError("Etcd is not responding properly")
 
     def members(self):
@@ -77,7 +77,7 @@ class Etcd:
             if e.code == 404:
                 return None
             raise helpers.errors.CurrentLeaderError("Etcd is not responding properly")
-        except urllib2.URLError:
+        except (urllib2.URLError, ssl.SSLError):
             raise helpers.errors.CurrentLeaderError("Etcd is not responding properly")
 
 
@@ -94,7 +94,7 @@ class Etcd:
             if e.code == 412:
                 logger.info("Could not take out TTL lock: %s" % e)
             return False
-        except urllib2.URLError:
+        except (urllib2.URLError, ssl.SSLError):
             return False
 
     def update_leader(self, state_handler):
@@ -112,7 +112,7 @@ class Etcd:
             if e.code == 404:
                 logger.error("Error updating TTL on ETCD for primary.")
                 return None
-        except urllib2.URLError:
+        except (urllib2.URLError, ssl.SSLError):
                 logger.error("Error updating TTL on ETCD for primary.")
                 return None
 
@@ -128,19 +128,17 @@ class Etcd:
             return False
         except ValueError:
             return False
+        except ssl.SSLError:
+            return False
 
     def am_i_leader(self, value):
         try:
             reponse = self.get_client_path("/leader")
             logger.info("Lock owner: %s; I am %s" % (reponse["node"]["value"], value))
             return reponse["node"]["value"] == value
-        except urllib2.HTTPError:
+        except (urllib2.HTTPError, ssl.SSLError, urllib2.URLError):
             logger.error("Couldn't reach etcd")
             return False
-        except urllib2.URLError:
-            logger.error("Couldn't reach etcd")
-            return False
-
 
     def race(self, path, value):
         while True:
@@ -152,6 +150,6 @@ class Etcd:
                 else:
                     logger.warning("etcd is not ready for connections")
                     time.sleep(10)
-            except urllib2.URLError:
+            except (urllib2.URLError, ssl.SSLError):
                     logger.warning("Issue connecting to etcd")
                     time.sleep(10)
