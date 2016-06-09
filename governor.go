@@ -1,7 +1,7 @@
 package main
 
 import (
-	"flag"
+
 	//"fmt"
 	"log"
 	//"os/exec"
@@ -24,8 +24,7 @@ func main() {
 	if configuration.Postgresql.NeedsInitialization() {
 		log.Printf("Postgres needs to initialize; racing to etcd initialization key.")
 		if configuration.Etcd.WinInitializationRace(configuration.Postgresql.Name) {
-			err = configuration.Postgresql.Initialize()
-			if err != nil {
+			if err = configuration.Postgresql.Initialize(); err != nil {
 				log.Fatal("Error initializing Postgresql database: %v", err)
 			}
 		} else {
