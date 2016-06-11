@@ -29,6 +29,22 @@ type fsm struct {
 	stoppedc chan struct{}
 }
 
+type SingleLeaderFSM interface {
+	UniqueID() uint64
+	LeaderCh() <-chan *LeaderUpdate
+	RaceForLeader(leader Leader) error
+	ForceLeader(leader Leader) error
+	DeleteLeader() error
+	Leader(leader Leader) (bool, error)
+	MemberCh() <-chan *MemberUpdate
+	SetMember(member Member) error
+	DeleteMember(id string) error
+	Member(id string, member Member) (bool, error)
+	Members(members interface{}) error
+	Cleanup() error
+	Destroy() error
+}
+
 type Config struct {
 	RaftPort       int
 	APIPort        int
@@ -40,7 +56,7 @@ type Config struct {
 }
 
 // TODO: Implement TTL for members
-func NewGovernorFSM(config *Config) (*fsm, error) {
+func NewGovernorFSM(config *Config) (SingleLeaderFSM, error) {
 	newFSM := &fsm{
 		leaderTTL:  config.LeaderTTL,
 		members:    make(map[string]*memberBackend),
@@ -132,15 +148,19 @@ func (f *fsm) DeleteLeader() error {
 	return f.proposeDeleteLeader()
 }
 
-func (f *fsm) Leader(leader Leader) error {
+func (f *fsm) Leader(leader Leader) (bool, error) {
 	f.Lock()
 	defer f.Unlock()
 	if f.leader == nil {
 		f.leader = nil
-		return nil
+		return false, nil
 	}
 
-	return leader.UnmarshalFSM(f.leader.Data)
+	if err := leader.UnmarshalFSM(f.leader.Data); err != nil {
+		return false, err
+	}
+
+	return true, nil
 }
 
 func (f *fsm) MemberCh() <-chan *MemberUpdate {

@@ -101,6 +101,14 @@ func (p *Postgresql) AsFSMMember() (fsm.Member, error) {
 	}, nil
 }
 
+func (p *Postgresql) FSMLeaderTemplate() fsm.Leader {
+	return &clusterMember{}
+}
+
+func (p *Postgresql) FSMMemberTemplate() fsm.Member {
+	return &clusterMember{}
+}
+
 // TODO: Change interface to (bool, error)???
 func (p *Postgresql) IsHealthiestOf(leader fsm.Leader, members []fsm.Member) bool {
 	selfLocation, err := p.xlogLocation()
@@ -246,6 +254,9 @@ func (p *Postgresql) Start() error {
 }
 
 func (p *Postgresql) start() error {
+	p.opLock.Lock()
+	defer p.opLock.Unlock()
+
 	cmd := exec.Command("pg_ctl",
 		"start",
 		"-w",

@@ -5,6 +5,7 @@ import (
 	"github.com/compose/governor/fsm"
 )
 
+// TODO:Needs some way to check a fsm Interface values it defines
 type SingleLeaderService interface {
 	Initialize() error         //Check
 	NeedsInitilization() error //Check
@@ -46,6 +47,9 @@ type SingleLeaderService interface {
 	// a cluster and can sufficiently typecast fsm.Member/Leader upon getting on back
 	AsFSMMember() (fsm.Member, error) // Check
 	AsFSMLeader() (fsm.Leader, error) // Check
+
+	FSMMemberTemplate() fsm.Member
+	FSMLeaderTemplate() fsm.Leader
 
 	IsHealthy() bool
 	Ping() error // Check
