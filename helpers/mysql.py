@@ -29,14 +29,17 @@ class MySQL:
             max_attempts = 0
             while True:
                 try:
-                    self.conn_holder = msycosql.connect(unix_socket=self.socket, user='root', db='mysql')
+                    self.conn_holder = msycosql.connect(unix_socket=self.socket, user='root', db='information_schema')
                     break
                 except _mysql_exceptions.OperationalError as e:
                     self.conn_holder = None
-                    if max_attempts > 4:
-                        raise e
-                    max_attempts += 1
-                    time.sleep(5)
+                    if e[0] == 1049: # catch Unknown database 'mysql' and allow it to proceed
+                        time.sleep(5)
+                    else:
+                        if max_attempts > 4:
+                            raise e
+                        max_attempts += 1
+                        time.sleep(5)
         return self.conn_holder
 
     def disconnect(self):
@@ -74,7 +77,7 @@ class MySQL:
     def initialize(self):
         print "######## initialize"
         if os.system("mysqld %s" % self.initdb_options()) == 0:
-            # start Postgres without options to setup replication user indepedent of other system settings
+            # start MySQL without options to setup replication user indepedent of other system settings
             os.system("mysqld %s &" % self.server_options())
             self.create_replication_user()
             os.system("mysqladmin shutdown -u root --socket %s" % self.socket)
@@ -144,7 +147,7 @@ class MySQL:
     def is_healthy(self):
         print "######## is_healthy"
         if not self.is_running():
-            logger.warning("Postgresql is not running.")
+            logger.warning("MySQL is not running.")
             return False
 
         if self.is_leader():
@@ -218,6 +221,6 @@ class MySQL:
         print "######## last_operation"
         if self.is_leader():
             master_status = self.query("SHOW MASTER STATUS;").fetch_row()
-            return master_status[0] + '{0:08d}'.format(master_status[1])
+            return master_status[0][0] + '{0:08d}'.format(int(master_status[0][1]))
         else:
             return self.xlog_position()
