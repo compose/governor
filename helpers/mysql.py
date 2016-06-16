@@ -1,4 +1,4 @@
-import os, re, time
+import sys, os, re, time
 import logging
 import _mysql as msycosql
 import _mysql_exceptions
@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 class MySQL:
 
     def __init__(self, config):
-        logger.info("######## __init__")
+        logger.debug("######## __init__")
         self.name = config["name"]
         self.host, self.port = config["listen"].split(":")
         self.socket = config["socket"]
@@ -26,7 +26,7 @@ class MySQL:
         self.connection_string = "postgres://%s:%s@%s:%s/postgres" % (self.replication["username"], self.replication["password"], self.host, self.port)
 
     def conn(self):
-        logger.info("######## conn")
+        logger.debug("######## conn")
         if not self.conn_holder:
             max_attempts = 0
             while True:
@@ -45,24 +45,24 @@ class MySQL:
         return self.conn_holder
 
     def disconnect(self):
-        logger.info("######## disconnect")
+        logger.debug("######## disconnect")
         try:
             self.conn().close()
         except Exception as e:
             logger.error("Error disconnecting: %s" % e)
 
     def query(self, sql):
-        logger.info("######## query")
+        logger.debug("######## query")
         max_attempts = 0
         result = None
         while True:
             try:
-                logger.info("###### Trying query: %s" % sql)
+                logger.debug("###### Trying query: %s" % sql)
                 self.conn().query(sql)
                 result = self.conn().store_result()
                 break
             except _mysql_exceptions.OperationalError as e:
-                logger.info('###### rescued and will reconnect')
+                logger.debug('###### rescued and will reconnect')
                 if self.conn():
                     self.disconnect()
                 self.conn_holder = None
@@ -73,14 +73,15 @@ class MySQL:
         return result
 
     def data_directory_empty(self):
-        logger.info("######## data_directory_empty")
+        logger.debug("######## data_directory_empty")
         return not os.path.exists(self.data_dir) or os.listdir(self.data_dir) == []
 
     def initialize(self):
-        logger.info("######## initializing: mysqld %s" % self.initdb_options())
+        logger.debug("######## initializing: mysqld %s" % self.initdb_options())
         if subprocess.call("mysqld %s" % self.initdb_options(), shell=True) == 0:
             # start MySQL without options to setup replication user indepedent of other system settings
-            logger.info("######## starting: mysqld %s" % self.initdb_options())
+            logger.debug("######## starting: mysqld %s" % self.initdb_options())
+            self.clear_replication_conf()
             self.start()
             self.create_replication_user()
             self.stop()
@@ -90,40 +91,47 @@ class MySQL:
         return False
 
     def sync_from_leader(self, leader):
-        logger.info("######## sync_from_leader")
+        logger.debug("######## sync_from_leader")
         leader = urlparse(leader["address"])
 
-        subprocess.call("mysqldump --host %(hostname)s --port %(port)s -u %(username)s --all-databases --master-data > /tmp/sync-from-leader.db" %
-                {"hostname": leader.hostname, "port": leader.port, "username": leader.username, "password": leader.password}, shell=True)
+        if subprocess.call("mysqldump --host %(hostname)s --port %(port)s -u %(username)s -p%(password)s --all-databases --master-data=2 --single-transaction > /tmp/sync-from-leader.db" %
+                {"hostname": leader.hostname, "port": leader.port, "username": leader.username, "password": leader.password}, shell=True) != 0:
+            logger.fatal("Error running mysqldump.")
+            sys.exit(1)
 
         self.initialize()
         self.start()
-        self.query("SELECT true;") # wait for mysql
-
-        return subprocess.call("mysql -u root --socket %s < /tmp/sync-from-leader.db" % self.socket, shell=True) == 1
+        logger.debug("Loading with: mysql -u root --socket %s < /tmp/sync-from-leader.db" % self.socket)
+        if subprocess.call("mysql -u root --socket %s < /tmp/sync-from-leader.db" % self.socket, shell=True) == 0:
+            return True
+        else:
+            logger.fatal("Error loading data from mysqldump.")
+            sys.exit(1)
 
     def is_leader(self):
-        logger.info("######## is_leader")
+        logger.debug("######## is_leader")
         return self.query("SHOW SESSION VARIABLES WHERE variable_name = 'read_only';").fetch_row()[0][1] == "OFF"
 
     def is_running(self):
         if self.mysql_process:
-            logger.info("######## is_running: %s", self.mysql_process.poll())
+            logger.debug("######## is_running: %s", self.mysql_process.poll())
             return self.mysql_process.poll() == None # if no status, then the process is running
         else:
-            logger.info("######## is_running: never started")
+            logger.debug("######## is_running: never started")
             return False
 
     def start(self):
-        logger.info("######## start")
+        logger.debug("######## start")
         if self.is_running():
             logger.error("Cannot start MySQL because one is already running.")
             return False
 
-        logger.info("######## starting mysql")
-        self.mysql_process = subprocess.Popen("mysqld %s" % self.server_options(), shell=True)
+        logger.debug("######## starting mysql")
+        self.mysql_process = subprocess.Popen("mysqld --defaults-extra-file=%s/replication.cnf  %s" % (self.data_dir, self.server_options()), shell=True)
 
         while not self.is_ready():
+            if not self.is_running():
+                return False
             time.sleep(3)
         return self.mysql_process.poll() == None
 
@@ -131,27 +139,27 @@ class MySQL:
         return self.is_running() and subprocess.call("mysqladmin status -u root --socket %s" % self.socket, shell=True) == 0
 
     def stop(self):
-        logger.info("######## stop")
+        logger.debug("######## stop")
         if subprocess.call("mysqladmin shutdown -u root --socket %s" % self.socket, shell=True) == 0:
             return self.mysql_process.wait() == 0
 
     def reload(self):
-        logger.info("######## reload")
+        logger.debug("######## reload")
         return subprocess.call("mysqladmin reload -u root --socket %s" % self.socket, shell=True) == 0
 
     def restart(self):
-        logger.info("######## restart")
+        logger.debug("######## restart")
         return self.stop() and self.start()
 
     def server_options(self):
-        logger.info("######## server_options")
-        options = "--datadir %s --bind-address %s --port %s --socket %s" % (self.data_dir, self.host, self.port, self.socket)
+        logger.debug("######## server_options")
+        options = "--datadir %(datadir)s --bind-address %(host)s --port %(port)s --socket %(socket)s" % {"datadir": self.data_dir, "host": self.host, "port": self.port, "socket": self.socket}
         for setting, value in self.config["parameters"].iteritems():
             options += " --%s=%s" % (setting, value)
         return options
 
     def initdb_options(self):
-        logger.info("######## initdb_options")
+        logger.debug("######## initdb_options")
         options = "--initialize-insecure %s" % self.server_options()
         if "initdb_parameters" in self.config:
             for param in self.config["initdb_parameters"]:
@@ -160,7 +168,7 @@ class MySQL:
         return options
 
     def is_healthy(self):
-        logger.info("######## is_healthy")
+        logger.debug("######## is_healthy")
         if not self.is_running():
             logger.warning("MySQL is not running.")
             return False
@@ -171,7 +179,7 @@ class MySQL:
         return True
 
     def is_healthiest_node(self, state_store):
-        logger.info("######## is_healthiest_node")
+        logger.debug("######## is_healthiest_node")
         # this should only happen on initialization
         if state_store.last_leader_operation() is None:
             return True
@@ -188,7 +196,6 @@ class MySQL:
                 member_cursor = member_conn.cursor()
                 member_cursor.execute("SELECT %s - (pg_last_xlog_replay_location() - '0/000000'::pg_lsn) AS bytes;" % self.xlog_position())
                 xlog_diff = member_cursor.fetchone()[0]
-                logger.info([self.name, member["hostname"], xlog_diff])
                 if xlog_diff < 0:
                     member_cursor.close()
                     return False
@@ -198,32 +205,29 @@ class MySQL:
         return True
 
     def follow_the_leader(self, leader_hash):
-        logger.info("######## follow_the_leader")
+        logger.debug("######## follow_the_leader")
         leader = urlparse(leader_hash["address"])
-        if subprocess.call("grep 'host=%(hostname)s port=%(port)s' %(data_dir)s/recovery.conf > /dev/null" % {"hostname": leader.hostname, "port": leader.port, "data_dir": self.data_dir}, shell=True) != 0:
-            self.write_recovery_conf(leader_hash)
+        if subprocess.call("grep 'host=%(hostname)s port=%(port)s' %(data_dir)s/replication.cnf > /dev/null" % {"hostname": leader.hostname, "port": leader.port, "data_dir": self.data_dir}, shell=True) != 0:
+            self.write_replication_conf(leader_hash)
             self.restart()
         return True
 
     def follow_no_leader(self):
-        logger.info("######## follow_no_leader")
-        if not os.path.exists("%s/recovery.conf" % self.data_dir) or subprocess.call("grep primary_conninfo %(data_dir)s/recovery.conf &> /dev/null" % {"data_dir": self.data_dir}, shell=True) == 0:
-            self.write_recovery_conf(None)
-            if self.is_running():
-                self.restart()
+        self.write_recovery_conf()
         return True
 
     def promote(self):
-        logger.info("######## promote")
-        return subprocess.call("pg_ctl promote -w -D %s" % self.data_dir, shell=True) == 0
+        logger.debug("######## promote")
+        self.clear_replication_conf()
+        return self.restart()
 
     def demote(self, leader):
-        logger.info("######## demote")
-        self.write_recovery_conf(leader)
+        logger.debug("######## demote")
+        self.write_replication_conf(leader)
         self.restart()
 
     def create_replication_user(self):
-        logger.info("######## create_replication_user")
+        logger.debug("######## create_replication_user")
         success = False
 
         while not success:
@@ -233,18 +237,33 @@ class MySQL:
                 success = True
             except _mysql_exceptions.InternalError as e:
                 if e[0] == 29:
-                    logger.info("MySQL is not ready yet.  Giving it 5 seconds.")
+                    logger.debug("MySQL is not ready yet.  Giving it 5 seconds.")
                     time.sleep(5)
                 else:
                     raise e
 
     def xlog_position(self):
-        logger.info("######## xlog_position")
+        logger.debug("######## xlog_position")
         slave_status = self.query("SHOW SLAVE STATUS;").fetchone()
         return slave_status[6] + '{0:08d}'.format(slave_status[7])
 
+    def write_replication_conf(self, leader):
+        f = open("%s/replication.cnf" % self.data_dir, "w")
+        f.write("""
+read-only     = 1
+""" % {"server_id": self.name})
+        f.close()
+
+    def clear_replication_conf(self):
+        f = open("%s/replication.cnf" % self.data_dir, "w")
+        f.write("""
+[mysqld]
+read-only     = 0
+""" % {"server_id": self.name})
+        f.close()
+
     def last_operation(self):
-        logger.info("######## last_operation")
+        logger.debug("######## last_operation")
         if self.is_leader():
             master_status = self.query("SHOW MASTER STATUS;").fetch_row()
             return master_status[0][0] + '{0:08d}'.format(int(master_status[0][1]))

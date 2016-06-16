@@ -11,7 +11,7 @@ etcd:
 haproxy_status:
   listen: 127.0.0.1:15432
 mysql:
-  name: mysql1
+  name: mysql2
   listen: 127.0.0.1:3307
   socket: /tmp/mysql2.sock
   data_dir: ./data/mysql2
