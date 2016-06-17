@@ -58,7 +58,7 @@ def run(config):
                     continue
                 if mysql.sync_from_leader(leader):
                     logging.info("Governor Starting up: Sync Completed")
-                    mysql.write_recovery_conf(leader)
+                    mysql.write_replication_conf(leader)
                     logging.info("Governor Starting up: Starting MySQL")
                     mysql.start()
                     synced_from_leader = True

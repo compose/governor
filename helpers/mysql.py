@@ -99,10 +99,26 @@ class MySQL:
             logger.fatal("Error running mysqldump.")
             sys.exit(1)
 
-        self.initialize()
-        self.start()
-        logger.debug("Loading with: mysql -u root --socket %s < /tmp/sync-from-leader.db" % self.socket)
+        if subprocess.call("mysqld %s" % self.initdb_options(), shell=True) == 0:
+            self.clear_replication_conf()
+            self.start()
+        else:
+            logger.fatal("Error starting mysql as follower")
+            sys.exit(1)
+
+        master_settings = subprocess.check_output("head -n 30 /tmp/sync-from-leader.db | grep -o \"CHANGE MASTER TO MASTER_LOG_FILE='[^\\']\\+', MASTER_LOG_POS=[0-9]\+\"", shell=True)
+        master_settings += """
+        , MASTER_HOST='%(hostname)s', MASTER_PORT=%(port)s, MASTER_USER='%(username)s',MASTER_PASSWORD='%(password)s'
+        """ % {"hostname": leader.hostname, "port": leader.port, "username": leader.username, "password": leader.password}
+
+        logger.debug("Loading data with: mysql -u root --socket %s < /tmp/sync-from-leader.db" % self.socket)
         if subprocess.call("mysql -u root --socket %s < /tmp/sync-from-leader.db" % self.socket, shell=True) == 0:
+            logger.info("Data load successful.")
+            self.stop()
+            self.write_replication_conf({})
+            self.start()
+            self.query(master_settings);
+            self.query("START SLAVE;")
             return True
         else:
             logger.fatal("Error loading data from mysqldump.")
@@ -205,11 +221,11 @@ class MySQL:
         return True
 
     def follow_the_leader(self, leader_hash):
-        logger.debug("######## follow_the_leader")
-        leader = urlparse(leader_hash["address"])
-        if subprocess.call("grep 'host=%(hostname)s port=%(port)s' %(data_dir)s/replication.cnf > /dev/null" % {"hostname": leader.hostname, "port": leader.port, "data_dir": self.data_dir}, shell=True) != 0:
-            self.write_replication_conf(leader_hash)
-            self.restart()
+        # logger.debug("######## follow_the_leader")
+        # leader = urlparse(leader_hash["address"])
+        # if subprocess.call("grep 'host=%(hostname)s port=%(port)s' %(data_dir)s/replication.cnf > /dev/null" % {"hostname": leader.hostname, "port": leader.port, "data_dir": self.data_dir}, shell=True) != 0:
+            # self.write_replication_conf(leader_hash)
+            # self.restart()
         return True
 
     def follow_no_leader(self):
@@ -250,6 +266,7 @@ class MySQL:
     def write_replication_conf(self, leader):
         f = open("%s/replication.cnf" % self.data_dir, "w")
         f.write("""
+[mysqld]
 read-only     = 1
 """ % {"server_id": self.name})
         f.close()
