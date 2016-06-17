@@ -107,7 +107,7 @@ class Etcd:
 
     def last_leader_operation(self):
         try:
-            return int(self.get_client_path("/optime/leader")["node"]["value"])
+            return float(self.get_client_path("/optime/leader")["node"]["value"])
         except urllib2.HTTPError as e:
             if e.code == 404:
                 logger.error("Error updating TTL on ETCD for primary.")

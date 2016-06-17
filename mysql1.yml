@@ -18,7 +18,35 @@ mysql:
   maximum_lag_on_failover: 1048576 # 1 megabyte in bytes
   post_initialization:
     - CREATE USER batman IDENTIFIED BY 'alfred';
-    - GRANT ALL PRIVILEGES ON *.* TO batman@'%';
+    - >
+      GRANT
+        ALTER,
+        ALTER ROUTINE,
+        CREATE,
+        CREATE ROUTINE,
+        CREATE TABLESPACE,
+        CREATE TEMPORARY TABLES,
+        CREATE USER,
+        CREATE VIEW,
+        DELETE,
+        DROP,
+        EVENT,
+        EXECUTE,
+        FILE,
+        GRANT OPTION,
+        INDEX,
+        INSERT,
+        LOCK TABLES,
+        PROCESS,
+        REFERENCES,
+        RELOAD,
+        SELECT,
+        SHOW DATABASES,
+        SHOW VIEW,
+        TRIGGER,
+        UPDATE,
+        USAGE
+      ON *.* TO batman@'%';
   replication:
     username: replicator
     password: rep-pass

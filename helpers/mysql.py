@@ -116,7 +116,7 @@ class MySQL:
         if subprocess.call("mysql -u root --socket %s < /tmp/sync-from-leader.db" % self.socket, shell=True) == 0:
             logger.info("Data load successful.")
             self.stop()
-            self.write_replication_conf({})
+            self.write_replication_conf()
             self.start()
             self.query(master_settings);
             self.query("START SLAVE;")
@@ -201,7 +201,7 @@ class MySQL:
         if state_store.last_leader_operation() is None:
             return True
 
-        if (state_store.last_leader_operation() - self.xlog_position()) > self.config["maximum_lag_on_failover"]:
+        if (state_store.last_leader_operation() - self.last_operation()) > self.config["maximum_lag_on_failover"]:
             return False
 
         for member in state_store.members():
@@ -211,7 +211,7 @@ class MySQL:
                 member_conn = psycopg2.connect(member["address"])
                 member_conn.autocommit = True
                 member_cursor = member_conn.cursor()
-                member_cursor.execute("SELECT %s - (pg_last_xlog_replay_location() - '0/000000'::pg_lsn) AS bytes;" % self.xlog_position())
+                member_cursor.execute("SELECT %s - (pg_last_xlog_replay_location() - '0/000000'::pg_lsn) AS bytes;" % self.last_operation())
                 xlog_diff = member_cursor.fetchone()[0]
                 if xlog_diff < 0:
                     member_cursor.close()
@@ -225,12 +225,15 @@ class MySQL:
         # logger.debug("######## follow_the_leader")
         # leader = urlparse(leader_hash["address"])
         # if subprocess.call("grep 'host=%(hostname)s port=%(port)s' %(data_dir)s/replication.cnf > /dev/null" % {"hostname": leader.hostname, "port": leader.port, "data_dir": self.data_dir}, shell=True) != 0:
-            # self.write_replication_conf(leader_hash)
+            # self.write_replication_conf()
             # self.restart()
         return True
 
     def follow_no_leader(self):
-        self.write_recovery_conf()
+        self.write_replication_conf()
+        if self.is_ready():
+            self.query("SET GLOBAL read_only = ON;")
+            self.query("STOP SLAVE;")
         return True
 
     def promote(self):
@@ -240,7 +243,7 @@ class MySQL:
 
     def demote(self, leader):
         logger.debug("######## demote")
-        self.write_replication_conf(leader)
+        self.write_replication_conf()
         self.restart()
 
     def create_replication_user(self):
@@ -264,12 +267,7 @@ class MySQL:
         for command in self.config["post_initialization"]:
             self.query(command)
 
-    def xlog_position(self):
-        logger.debug("######## xlog_position")
-        slave_status = self.query("SHOW SLAVE STATUS;").fetchone()
-        return slave_status[6] + '{0:08d}'.format(slave_status[7])
-
-    def write_replication_conf(self, leader):
+    def write_replication_conf(self):
         f = open("%s/replication.cnf" % self.data_dir, "w")
         f.write("""
 [mysqld]
@@ -287,8 +285,12 @@ read-only     = 0
 
     def last_operation(self):
         logger.debug("######## last_operation")
-        if self.is_leader():
-            master_status = self.query("SHOW MASTER STATUS;").fetch_row()
-            return master_status[0][0] + '{0:08d}'.format(int(master_status[0][1]))
+        master_status = self.query("SHOW MASTER STATUS;").fetch_row()[0]
+        position = None
+        if master_status:
+            position = master_status[0].split('.')[1] + '.{0:08d}'.format(int(master_status[1]))
         else:
-            return self.xlog_position()
+            slave_status = self.query("SHOW SLAVE STATUS;").fetch_row()[0]
+            position = slave_status[6].split('.')[1] + '.{0:08d}'.format(slave_status[7])
+        logger.debug("last operation: %s" % position)
+        return float(position)
