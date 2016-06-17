@@ -107,8 +107,8 @@ class MySQL:
             logger.fatal("Error starting mysql as follower")
             sys.exit(1)
 
-        master_settings = subprocess.check_output("head -n 30 /tmp/sync-from-leader.db | grep -o \"CHANGE MASTER TO MASTER_LOG_FILE='[^\\']\\+', MASTER_LOG_POS=[0-9]\+\"", shell=True)
-        master_settings += """
+        leader_settings = subprocess.check_output("head -n 30 /tmp/sync-from-leader.db | grep -o \"CHANGE MASTER TO MASTER_LOG_FILE='[^\\']\\+', MASTER_LOG_POS=[0-9]\+\"", shell=True)
+        leader_settings += """
         , MASTER_HOST='%(hostname)s', MASTER_PORT=%(port)s, MASTER_USER='%(username)s',MASTER_PASSWORD='%(password)s'
         """ % {"hostname": leader.hostname, "port": leader.port, "username": leader.username, "password": leader.password}
 
@@ -118,7 +118,7 @@ class MySQL:
             self.stop()
             self.write_replication_conf()
             self.start()
-            self.query(master_settings);
+            self.query(leader_settings);
             self.query("START SLAVE;")
             return True
         else:
@@ -222,11 +222,37 @@ class MySQL:
         return True
 
     def follow_the_leader(self, leader_hash):
-        # logger.debug("######## follow_the_leader")
-        # leader = urlparse(leader_hash["address"])
-        # if subprocess.call("grep 'host=%(hostname)s port=%(port)s' %(data_dir)s/replication.cnf > /dev/null" % {"hostname": leader.hostname, "port": leader.port, "data_dir": self.data_dir}, shell=True) != 0:
-            # self.write_replication_conf()
-            # self.restart()
+        logger.debug("######## follow_the_leader")
+        leader = urlparse(leader_hash["address"])
+
+        followed_leader = self.query("SHOW SLAVE STATUS;").fetch_row()
+
+        if self.is_leader() or not followed_leader or followed_leader[0][1] == leader.hostname and followed_leader[0][3] == leader.port:
+            self.query("SET GLOBAL read_only = ON;")
+            self.query("STOP SLAVE;")
+            self.write_replication_conf()
+
+            log_file, log_pos = self.last_log_file_and_position()
+
+            self.query("""
+            CHANGE MASTER TO
+                MASTER_LOG_FILE='%(log_file)s',
+                MASTER_LOG_POS=%(log_pos)s,
+                MASTER_HOST='%(hostname)s',
+                MASTER_PORT=%(port)s,
+                MASTER_USER='%(username)s',
+                MASTER_PASSWORD='%(password)s';
+            """ % {
+                "log_file": log_file,
+                "log_pos": log_pos,
+                "hostname": leader.hostname,
+                "port": leader.port,
+                "username": leader.username,
+                "password": leader.password
+                })
+
+            self.query("START SLAVE;")
+
         return True
 
     def follow_no_leader(self):
@@ -238,6 +264,7 @@ class MySQL:
 
     def promote(self):
         logger.debug("######## promote")
+        self.query("STOP SLAVE;")
         self.clear_replication_conf()
         return self.restart()
 
@@ -283,14 +310,33 @@ read-only     = 0
 """ % {"server_id": self.name})
         f.close()
 
+    # returns the greater of master or follower position
     def last_operation(self):
         logger.debug("######## last_operation")
-        master_status = self.query("SHOW MASTER STATUS;").fetch_row()[0]
-        position = None
-        if master_status:
-            position = master_status[0].split('.')[1] + '.{0:08d}'.format(int(master_status[1]))
+        log_file, log_pos = self.last_log_file_and_position()
+        return self.comparative_position(log_file, log_pos)
+
+    def last_log_file_and_position(self):
+        log_file, log_pos, follower_log_file, follower_log_pos = (None, None, None, None);
+
+        leader_status = self.query("SHOW MASTER STATUS;").fetch_row()
+        if leader_status:
+            log_file, log_pos = leader_status[0][0], leader_status[0][1]
+
+        follower_status = self.query("SHOW SLAVE STATUS;").fetch_row()
+        if follower_status:
+            follower_log_file, follower_log_pos = follower_status[0][5], follower_status[0][6]
+
+        return self.largest_log_file_and_pos(log_file, log_pos, follower_log_file, follower_log_pos)
+
+    def comparative_position(self, log_file, log_pos):
+        if log_file == None or log_pos == None:
+            return 0.0
         else:
-            slave_status = self.query("SHOW SLAVE STATUS;").fetch_row()[0]
-            position = slave_status[6].split('.')[1] + '.{0:08d}'.format(slave_status[7])
-        logger.debug("last operation: %s" % position)
-        return float(position)
+            return float(log_file.split('.')[1] + '.{0:08d}'.format(int(log_pos)))
+
+    def largest_log_file_and_pos(self, log_file, log_pos, follower_log_file, follower_log_pos):
+        if self.comparative_position(log_file, log_pos) > self.comparative_position(follower_log_file, follower_log_pos):
+            return (log_file, log_pos)
+        else:
+            return (follower_log_file, follower_log_pos)
