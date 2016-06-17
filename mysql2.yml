@@ -16,6 +16,9 @@ mysql:
   socket: /tmp/mysql2.sock
   data_dir: ./data/mysql2
   maximum_lag_on_failover: 1048576 # 1 megabyte in bytes
+  post_initialization:
+    - CREATE USER batman IDENTIFIED BY 'alfred';
+    - GRANT ALL PRIVILEGES ON *.* TO batman@'%';
   replication:
     username: replicator
     password: rep-pass

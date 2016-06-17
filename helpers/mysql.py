@@ -84,6 +84,7 @@ class MySQL:
             self.clear_replication_conf()
             self.start()
             self.create_replication_user()
+            self.run_post_initialization_commands()
             self.stop()
 
             return True
@@ -257,6 +258,11 @@ class MySQL:
                     time.sleep(5)
                 else:
                     raise e
+
+    def run_post_initialization_commands(self):
+        logger.debug("######## run_post_initialization_commands")
+        for command in self.config["post_initialization"]:
+            self.query(command)
 
     def xlog_position(self):
         logger.debug("######## xlog_position")
