@@ -81,7 +81,7 @@ class MySQL:
         if subprocess.call("mysqld %s" % self.initdb_options(), shell=True) == 0:
             # start MySQL without options to setup replication user indepedent of other system settings
             logger.debug("######## starting: mysqld %s" % self.initdb_options())
-            self.clear_replication_conf()
+            self.read_write_replication_conf()
             self.start()
             self.create_replication_user()
             self.run_post_initialization_commands()
@@ -101,7 +101,7 @@ class MySQL:
             sys.exit(1)
 
         if subprocess.call("mysqld %s" % self.initdb_options(), shell=True) == 0:
-            self.clear_replication_conf()
+            self.read_write_replication_conf()
             self.start()
         else:
             logger.fatal("Error starting mysql as follower")
@@ -116,7 +116,7 @@ class MySQL:
         if subprocess.call("mysql -u root --socket %s < /tmp/sync-from-leader.db" % self.socket, shell=True) == 0:
             logger.info("Data load successful.")
             self.stop()
-            self.write_replication_conf()
+            self.read_only_replication_conf()
             self.start()
             self.query(leader_settings);
             self.query("START SLAVE;")
@@ -230,7 +230,7 @@ class MySQL:
         if self.is_leader() or not followed_leader or followed_leader[0][1] == leader.hostname and followed_leader[0][3] == leader.port:
             self.query("SET GLOBAL read_only = ON;")
             self.query("STOP SLAVE;")
-            self.write_replication_conf()
+            self.read_only_replication_conf()
 
             log_file, log_pos = self.last_log_file_and_position()
 
@@ -256,21 +256,23 @@ class MySQL:
         return True
 
     def follow_no_leader(self):
-        self.write_replication_conf()
+        self.read_only_replication_conf()
         if self.is_ready():
             self.query("SET GLOBAL read_only = ON;")
+            self.clear_master()
             self.query("STOP SLAVE;")
         return True
 
     def promote(self):
         logger.debug("######## promote")
         self.query("STOP SLAVE;")
-        self.clear_replication_conf()
+        self.clear_master()
+        self.read_write_replication_conf()
         return self.restart()
 
     def demote(self, leader):
         logger.debug("######## demote")
-        self.write_replication_conf()
+        self.read_only_replication_conf()
         self.restart()
 
     def create_replication_user(self):
@@ -294,7 +296,15 @@ class MySQL:
         for command in self.config["post_initialization"]:
             self.query(command)
 
-    def write_replication_conf(self):
+    def clear_master(self):
+        self.query("""
+        RESET SLAVE;
+        """)
+
+        return True
+
+
+    def read_only_replication_conf(self):
         f = open("%s/replication.cnf" % self.data_dir, "w")
         f.write("""
 [mysqld]
@@ -302,7 +312,7 @@ read-only     = 1
 """ % {"server_id": self.name})
         f.close()
 
-    def clear_replication_conf(self):
+    def read_write_replication_conf(self):
         f = open("%s/replication.cnf" % self.data_dir, "w")
         f.write("""
 [mysqld]
