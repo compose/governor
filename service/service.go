@@ -13,6 +13,7 @@ type SingleLeaderService interface {
 	// Will need to typecast to the struct type
 	// Hopefully no reflection required
 	FollowTheLeader(leader fsm.Leader) error //Check
+	FollowNoLeader() error
 
 	// A service should NEVER have knowledge of the FSM
 	// However, it should implement it's own fsm.Member

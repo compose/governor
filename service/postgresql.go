@@ -408,10 +408,6 @@ func (p *Postgresql) FollowTheLeader(leader fsm.Leader) error {
 	p.atomicLock.Lock()
 	defer p.atomicLock.Unlock()
 
-	if p.RunningAsLeader() {
-		return ErrorAlreadyLeader
-	}
-
 	// Is this nescessary since we'll just be writing over it?
 	// Me thinks premature optimization
 	/*
@@ -438,6 +434,20 @@ func (p *Postgresql) FollowTheLeader(leader fsm.Leader) error {
 	*/
 
 	if err := p.writeRecoveryConf(leader); err != nil {
+		return err
+	}
+	if err := p.Restart(); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (p *Postgresql) FollowNoLeader() error {
+	p.atomicLock.Lock()
+	defer p.atomicLock.Unlock()
+
+	if err := p.writeRecoveryConf(nil); err != nil {
 		return err
 	}
 	if err := p.Restart(); err != nil {

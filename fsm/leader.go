@@ -1,6 +1,5 @@
 package fsm
 
-var LeaderUpdateExpiredType = "LEADER_EXPIRED"
 var LeaderUpdateSetType = "LEADER_SET"
 var LeaderUpdateDeletedType = "LEADER_DELETED"
 

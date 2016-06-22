@@ -41,7 +41,7 @@ func (ha *SingleLeaderHA) Run() error {
 	for {
 		select {
 		case <-ha.loopTicker:
-			if err := RunCycle(); err != nil {
+			if err := ha.RunCycle(); err != nil {
 				return err
 			}
 		}
@@ -51,6 +51,7 @@ func (ha *SingleLeaderHA) Run() error {
 
 func (ha *SingleLeaderHA) RunCycle() error {
 	// Do Checks and touch stuff
+
 	return nil
 }
 
@@ -61,12 +62,95 @@ func (ha *SingleLeaderHA) scanChannels() {
 }
 
 func (ha *SingleLeaderHA) scanMemberChan() {
+	new
 	for {
-		//TODO: Will this block until something comes in?
-		go func(ha *SingleLeaderHA, member fsm.MemberUpdate) {
-			ha.handleMemberUpdate()
+		go func(ha *SingleLeaderHA, mu fsm.MemberUpdate) {
+			if err := ha.handleMemberUpdate(mu); err != nil {
+				// TODO: add logging
+				fmt.Println(err.Error())
+			}
 		}(ha, <-ha.memberc)
 	}
+}
+func (ha *SingleLeaderHA) handleMemberUpdate(mu fsm.MemberUpdate) error {
+	temp := ha.service.FSMMemberTemplate()
+
+	switch mu.Type {
+	case fsm.MemberUpdateSetType:
+		if err := temp.Unmarshal(mu.CurrentMember); err != nil {
+			return err
+		}
+
+		members := []fsm.Member{temp}
+		return ha.service.AddMembers(members)
+	case fsm.MemberUpdateDeleteType:
+		if err := temp.Unmarshal(mu.OldMember); err != nil {
+			return err
+		}
+
+		members := []fsm.Member{temp}
+		return ha.service.RemoveMembers(members)
+	default:
+		return errors.New("Unknown update type")
+	}
+
+}
+
+func (ha *SingleLeaderHA) scanLeaderChan() {
+	for {
+		go func(ha *SingleLeaderHA, member fsm.LeaderUpdate) {
+			if err := ha.handleLeaderUpdate(member); err != nil {
+				// TODO: add logging
+				fmt.Println(err.Error())
+			}
+		}(ha, <-ha.leaderc)
+	}
+}
+
+func (ha *SingleLeaderHA) handleLeaderUpdate(mu fsm.LeaderUpdate) error {
+	temp := ha.service.FSMLeaderTemplate()
+
+	switch mu.Type {
+	case fsm.LeaderUpdateSetType:
+		if err := temp.Unmarshal(mu.CurrentLeader); err != nil {
+			return err
+		}
+
+		if ha.leaderIsMe(temp) {
+			if !ha.fsm.RunningAsLeader() {
+				return ha.fsm.Promote()
+			}
+		} else if ha.service.RunningAsLeader() {
+			return ha.fsm.Demote(temp)
+		} else {
+			return ha.fsm.FollowTheLeader(temp)
+		}
+
+	case fsm.LeaderUpdateDeleteType:
+		if err := ha.service.FollowNoLeader(); err != nil {
+			return err
+		}
+
+		lead, err := ha.service.AsFSMLeader()
+		if err != nil {
+			return err
+		}
+
+		return ha.fsm.RaceForLeader(lead)
+
+	default:
+		return errors.New("Unknown update type")
+	}
+
+}
+
+func (ha *SingleLeaderHA) leaderIsMe(leader fsm.Leader) (bool, error) {
+	meAsLeader, err := ha.service.AsFSMLeader()
+	if err != nil {
+		return false, err
+	}
+	return meAsLeader.ID() == leader.ID(), nil
+
 }
 
 func (ha *SingleLeaderHA) isLeader() (bool, error) {
