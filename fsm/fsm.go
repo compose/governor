@@ -17,6 +17,11 @@ type fsm struct {
 
 	raft *canoe.Node
 
+	initID  *uint64
+	gotInit chan bool
+
+	current bool
+
 	leader    *leaderBackend
 	leaderc   chan *LeaderUpdate
 	leaderTTL int64
@@ -31,18 +36,52 @@ type fsm struct {
 
 type SingleLeaderFSM interface {
 	UniqueID() uint64
+
+	// this is blocking until we have an init since
+	// init is set ONLY once in the life of the FSM
+	RaceForInit(timeout time.Duration) (bool, error)
+
+	// TODO: Treat as a proper chan? With observers?
 	LeaderCh() <-chan *LeaderUpdate
 	RaceForLeader(leader Leader) error
+	RefreshLeader() error
 	ForceLeader(leader Leader) error
 	DeleteLeader() error
 	Leader(leader Leader) (bool, error)
+
 	MemberCh() <-chan *MemberUpdate
 	SetMember(member Member) error
+	RefreshMember(id string) error
 	DeleteMember(id string) error
 	Member(id string, member Member) (bool, error)
 	Members(members interface{}) error
+
+	CompletedRestore() bool
+
 	Cleanup() error
 	Destroy() error
+}
+
+var ErrorRaceTimedOut = errors.New("Waiting for init race timed out")
+
+// Because this is blocking give timeout to wait before erring and coming back
+// This also allows for an exponential backoff
+func (f *fsm) RaceForInit(timeout time.Duration) (bool, error) {
+	if f.initID != nil {
+		return false, nil
+	}
+
+	if err := f.proposeRaceForInit(); err != nil {
+		return false, err
+	}
+
+	select {
+	case <-time.After(timeout):
+		return false, ErrorRaceTimedOut
+	case val := <-f.gotInit:
+		return val, nil
+	}
+
 }
 
 type Config struct {
@@ -85,6 +124,12 @@ func NewGovernorFSM(config *Config) (SingleLeaderFSM, error) {
 	newFSM.raft = node
 
 	if err := newFSM.start(); err != nil {
+		return nil, err
+	}
+
+	// TODO: do this a couple times since a single could get lost
+	// TODO: Perhaps have this expire on occasion and force a touching update
+	if err := newFSM.proposeNewNodeUpToDate(); err != nil {
 		return nil, err
 	}
 
@@ -140,6 +185,10 @@ func (f *fsm) RaceForLeader(leader Leader) error {
 	return f.proposeRaceLeader(leader)
 }
 
+func (f *fsm) RefreshLeader() error {
+	return f.proposeRefreshLeader()
+}
+
 func (f *fsm) ForceLeader(leader Leader) error {
 	return f.proposeForceLeader(leader)
 }
@@ -169,6 +218,10 @@ func (f *fsm) MemberCh() <-chan *MemberUpdate {
 
 func (f *fsm) SetMember(member Member) error {
 	return f.proposeSetMember(member)
+}
+
+func (f *fsm) RefreshMember(id string) error {
+	return f.proposeRefreshMember(id)
 }
 
 func (f *fsm) DeleteMember(id string) error {
@@ -226,6 +279,13 @@ func (f *fsm) Members(members interface{}) error {
 	resultv.Elem().Set(retMembers)
 
 	return nil
+}
+
+func (f *fsm) CompletedRestore() bool {
+	f.Lock()
+	defer f.Unlock()
+
+	return f.current
 }
 
 func (f *fsm) Cleanup() error {

@@ -7,10 +7,10 @@ import (
 )
 
 type Configuration struct {
-	LoopWait   int           `yaml:"loop_wait"`
-	Etcd       Etcd          `yaml:"etcd"`
-	Haproxy    HaproxyConfig `yaml:"haproxy_status"`
-	Postgresql Postgresql    `yaml:"postgresql"`
+	LoopWait int        `yaml:"loop_wait"`
+	FSM      fsm.Config `yaml:"fsm"`
+	//Haproxy    HaproxyConfig `yaml:"haproxy_status"`
+	Postgresql ha.PostgresqlConfig `yaml:"postgresql"`
 }
 
 type HaproxyConfig struct {

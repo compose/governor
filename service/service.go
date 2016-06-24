@@ -6,9 +6,10 @@ import (
 )
 
 // TODO:Needs some way to check a fsm Interface values it defines
+// TODO: Maybe pass leader and member data as []byte to avoid hoop jumping?
 type SingleLeaderService interface {
 	Initialize() error         //Check
-	NeedsInitilization() error //Check
+	NeedsInitialization() bool //Check
 
 	// Will need to typecast to the struct type
 	// Hopefully no reflection required
@@ -42,17 +43,22 @@ type SingleLeaderService interface {
 	Promote() error                 //Check
 	Demote(leader fsm.Leader) error //Check
 	Start() error                   //Check
-	Stop() error                    //Check
+	Restart() error
+	Stop() error //Check
 
 	// Let's assume each SingleLeaderService is defined as identical accross
 	// a cluster and can sufficiently typecast fsm.Member/Leader upon getting on back
 	AsFSMMember() (fsm.Member, error) // Check
 	AsFSMLeader() (fsm.Leader, error) // Check
 
+	FSMMemberFromBytes(data []byte) (fsm.Member, error)
+	FSMLeaderFromBytes(data []byte) (fsm.Leader, error)
+
 	FSMMemberTemplate() fsm.Member
 	FSMLeaderTemplate() fsm.Leader
 
 	IsHealthy() bool
+	IsRunning() bool
 	Ping() error // Check
 }
 
