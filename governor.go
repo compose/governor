@@ -1,10 +1,13 @@
 package main
 
 import (
-
-	//"fmt"
+	"fmt"
 	"log"
 	//"os/exec"
+	"flag"
+	"github.com/compose/governor/fsm"
+	"github.com/compose/governor/ha"
+	"github.com/compose/governor/service"
 	"time"
 )
 
@@ -16,49 +19,29 @@ func main() {
 		log.Fatalf("Error loading governor configuration: %v", err)
 	}
 
-	for !configuration.Etcd.Available() {
-		log.Printf("Etcd is unreachable.  Waiting 10 seconds and trying again at %v", configuration.Etcd.Endpoints)
-		time.Sleep(10 * time.Second)
+	configuration.Postgresql.DataDirectory = fmt.Sprintf("%s/%s", configuration.DataDir, "/pg")
+	configuration.FSM.DataDir = fmt.Sprintf("%s/%s", configuration.DataDir, "/fsm")
+
+	fmt.Println(configuration)
+
+	pg, err := service.NewPostgresql(configuration.Postgresql)
+	if err != nil {
+		log.Fatalf("Error creating new postgresql")
 	}
 
-	if configuration.Postgresql.NeedsInitialization() {
-		log.Printf("Postgres needs to initialize; racing to etcd initialization key.")
-		if configuration.Etcd.WinInitializationRace(configuration.Postgresql.Name) {
-			if err = configuration.Postgresql.Initialize(); err != nil {
-				log.Fatal("Error initializing Postgresql database: %v", err)
-			}
-		} else {
-			for configuration.Postgresql.NeedsInitialization() {
-				log.Printf("Getting leader from Etcd")
-				leader, err := configuration.Etcd.Leader()
-				if err != nil {
-					log.Printf("Error getting leader from Etcd: %v", err)
-					time.Sleep(10 * time.Second)
-				}
-				err = configuration.Postgresql.SyncFromLeader(leader)
-				if err != nil {
-					time.Sleep(10 * time.Second)
-				}
-			}
-		}
+	singleLeaderState, err := fsm.NewGovernorFSM(configuration.FSM)
+	if err != nil {
+		log.Fatalf("Error creating new FSM")
 	}
 
-	//ha, err := CreateHA(configuration)
+	haConf := &ha.SingleLeaderHAConfig{
+		Service:    pg,
+		FSM:        singleLeaderState,
+		UpdateWait: time.Duration(configuration.LoopWait) * time.Millisecond,
+	}
 
-	//cmd := startPostgres()
-	//current_pid := os.Getpid()
-
-	//defer stopPostgres()
-
-	//runTime := 1
-	//for cmd.ProcessState == nil && runTime < 30 {
-	//current_process, err := os.FindProcess(current_pid)
-	//if err != nil {
-	//log.Printf("Error finding current process status: %v", err)
-	//}
-	//log.Printf("Current process status: %v", current_process)
-	//log.Printf("Postgres is running: %v", runTime)
-	//time.Sleep(1 * time.Second)
-	//runTime += 1
-	//}
+	ha := ha.NewSingleLeaderHA(haConf)
+	if err := ha.Run(); err != nil {
+		log.Fatalf("Error Running HA")
+	}
 }

@@ -1,27 +1,22 @@
-loop_wait: 10
-etcd:
-  scope: batman
-  ttl: 30
-  # if running etcd with authentication, application authentication by uncommenting the following
-  # authentication:
-    # username: myusername
-    # password: mypassword
-  endpoints:
-    - http://localhost:4001
-  timeout: 5
-haproxy_status:
-  listen: 127.0.0.1:15432
+loop_wait: 1000 #milliseconds
+data_dir: data/postgres0 #canoe and pg data will go here
+fsm:
+  raft_port: 1234
+  api_port: 1244
+  bootstrap_peers:
+    - http://localhost:1245
+  bootstrap_node: true  #TODO: Alter canoe to allow set-list of bootstrap peers
+  # cluster_id: 1234
+  leader_ttl: 3000 #milliseconds
+  member_ttl: 3000 #milliseconds
 postgresql:
   name: postgresql0
   listen: 127.0.0.1:5432
-  data_dir: data/postgres0
   maximum_lag_on_failover: 1048576 # 1 megabyte in bytes
   replication:
     username: replicator
     password: rep-pass
     network:  127.0.0.1/32
-  #recovery_conf:
-    #restore_command: cp ../wal_archive/%f %p
   parameters:
     archive_mode: "on"
     wal_level: hot_standby

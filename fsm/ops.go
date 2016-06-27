@@ -406,18 +406,21 @@ func (f *fsm) applyDeleteStaleMembers(cmdData []byte) error {
 
 	f.Lock()
 	defer f.Unlock()
-	for _, member := range f.members {
+	for id, member := range f.members {
 		if cmd.Time >= member.Time+member.TTL {
 			update := &MemberUpdate{
 				Type:      MemberUpdateDeletedType,
 				OldMember: member.Data,
 			}
-			f.leader = nil
+
 			select {
 
 			case f.memberc <- update:
 			default:
 			}
+
+			delete(f.members, id)
+
 		} else if cmd.Time < f.leader.Time {
 			return ErrorBadTTLTimestamp
 		}

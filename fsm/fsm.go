@@ -85,19 +85,21 @@ func (f *fsm) RaceForInit(timeout time.Duration) (bool, error) {
 }
 
 type Config struct {
-	RaftPort       int
-	APIPort        int
-	BootstrapPeers []string
-	BootstrapNode  bool
-	DataDir        string
-	ClusterID      uint64
-	LeaderTTL      int64
+	RaftPort       int      `yaml:"raft_port"`
+	APIPort        int      `yaml:"api_port"`
+	BootstrapPeers []string `yaml:"bootstrap_peers"`
+	BootstrapNode  bool     `yaml:"is_bootstrap"`
+	DataDir        string   `yaml:"data_dir"`
+	ClusterID      uint64   `yaml:"cluster_id"`
+	LeaderTTL      int      `yaml:"leader_ttl"`
+	MemberTTL      int      `yaml:"member_ttl"`
 }
 
 // TODO: Implement TTL for members
 func NewGovernorFSM(config *Config) (SingleLeaderFSM, error) {
 	newFSM := &fsm{
-		leaderTTL:  config.LeaderTTL,
+		leaderTTL:  time.Duration(time.Duration(config.LeaderTTL) * time.Millisecond).Nanoseconds(),
+		memberTTL:  time.Duration(time.Duration(config.MemberTTL) * time.Millisecond).Nanoseconds(),
 		members:    make(map[string]*memberBackend),
 		syncTicker: time.Tick(500 * time.Millisecond),
 		stopc:      make(chan struct{}),

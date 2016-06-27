@@ -33,7 +33,7 @@ type postgresqlReplicationInfo struct {
 	Network  string `yaml:"network"`
 }
 
-func Newpostgresql(config *postgresqlConfig) (*postgresql, error) {
+func NewPostgresql(config *PostgresqlConfig) (*postgresql, error) {
 	pg := &postgresql{
 		name:                 config.Name,
 		host:                 strings.Split(config.Listen, ":")[0],
@@ -292,6 +292,10 @@ func (p *postgresql) Initialize() error {
 	cmd := exec.Command("initdb", "-D", p.dataDir)
 	log.Printf("Initializing Postgres database.")
 	return cmd.Run()
+}
+
+func (p *postgresql) Ping() error {
+	return p.conn.Ping()
 }
 
 func (p *postgresql) Start() error {
