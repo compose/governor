@@ -95,7 +95,7 @@ class MySQL:
         logger.debug("######## sync_from_leader")
         leader = urlparse(leader["address"])
 
-        if subprocess.call("mysqldump --host %(hostname)s --port %(port)s -u %(username)s -p%(password)s --all-databases --master-data=2 --single-transaction > /tmp/sync-from-leader.db" %
+        if subprocess.call("mysqldump --host %(hostname)s --port %(port)s -u %(username)s -p%(password)s --all-databases --triggers --routines --single-transaction > /tmp/sync-from-leader.db" %
                 {"hostname": leader.hostname, "port": leader.port, "username": leader.username, "password": leader.password}, shell=True) != 0:
             logger.fatal("Error running mysqldump.")
             sys.exit(1)
@@ -107,9 +107,13 @@ class MySQL:
             logger.fatal("Error starting mysql as follower")
             sys.exit(1)
 
-        leader_settings = subprocess.check_output("head -n 30 /tmp/sync-from-leader.db | grep -o \"CHANGE MASTER TO MASTER_LOG_FILE='[^\\']\\+', MASTER_LOG_POS=[0-9]\+\"", shell=True)
-        leader_settings += """
-        , MASTER_HOST='%(hostname)s', MASTER_PORT=%(port)s, MASTER_USER='%(username)s',MASTER_PASSWORD='%(password)s'
+        leader_settings = """
+        CHANGE MASTER TO
+            MASTER_AUTO_POSITION = 1,
+            MASTER_HOST='%(hostname)s',
+            MASTER_PORT=%(port)s,
+            MASTER_USER='%(username)s',
+            MASTER_PASSWORD='%(password)s'
         """ % {"hostname": leader.hostname, "port": leader.port, "username": leader.username, "password": leader.password}
 
         logger.debug("Loading data with: mysql -u root --socket %s < /tmp/sync-from-leader.db" % self.socket)
@@ -144,7 +148,7 @@ class MySQL:
             return False
 
         logger.debug("######## starting mysql")
-        self.mysql_process = subprocess.Popen("mysqld --defaults-extra-file=%s/replication.cnf  %s" % (self.data_dir, self.server_options()), shell=True)
+        self.mysql_process = subprocess.Popen("mysqld --defaults-extra-file=%s/replication.cnf --log_slave_updates=ON --gtid-mode=ON --enforce-gtid-consistency=ON  %s" % (self.data_dir, self.server_options()), shell=True)
 
         while not self.is_ready():
             if not self.is_running():
@@ -236,8 +240,7 @@ class MySQL:
 
             self.query("""
             CHANGE MASTER TO
-                MASTER_LOG_FILE='%(log_file)s',
-                MASTER_LOG_POS=%(log_pos)s,
+                MASTER_AUTO_POSITION = 1,
                 MASTER_HOST='%(hostname)s',
                 MASTER_PORT=%(port)s,
                 MASTER_USER='%(username)s',

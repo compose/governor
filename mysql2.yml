@@ -58,6 +58,3 @@ mysql:
     log-bin: mysql-bin
     innodb-flush-log-at-trx-commit: 1
     sync-binlog: 1
-    auto-increment-increment: 3
-    auto-increment-offset: 1
-    log-slave-updates: 1
