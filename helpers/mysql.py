@@ -211,17 +211,21 @@ class MySQL:
         for member in state_store.members():
             if member["hostname"] == self.name:
                 continue
+
             try:
-                member_conn = psycopg2.connect(member["address"])
-                member_conn.autocommit = True
-                member_cursor = member_conn.cursor()
-                member_cursor.execute("SELECT %s - (pg_last_xlog_replay_location() - '0/000000'::pg_lsn) AS bytes;" % self.last_operation())
-                xlog_diff = member_cursor.fetchone()[0]
-                if xlog_diff < 0:
-                    member_cursor.close()
-                    return False
-                member_cursor.close()
-            except psycopg2.OperationalError:
+                logger.debug("####### member")
+                logger.debug(member)
+                member_info = urlparse(member["address"])
+                member_conn = msycosql.connect(
+                        host=member_info.hostname,
+                        port=member_info.port,
+                        user=member_info.username,
+                        passwd=member_info.password,
+                        db='mysql')
+                member_status = member_conn.query("SHOW SLAVE STATUS;").fetch_row()
+                logger.debug(member_status)
+            except AttributeError as e:
+                logger.debug(e)
                 continue
         return True
 
@@ -231,7 +235,8 @@ class MySQL:
 
         followed_leader = self.query("SHOW SLAVE STATUS;").fetch_row()
 
-        if self.is_leader() or not followed_leader or followed_leader[0][1] == leader.hostname and followed_leader[0][3] == leader.port:
+        if self.is_leader() or not followed_leader or followed_leader[0][1] != leader.hostname or int(followed_leader[0][3]) != int(leader.port):
+            logger.debug("######## changing_leader to %s", leader_hash["address"])
             self.query("SET GLOBAL read_only = ON;")
             self.query("STOP SLAVE;")
             self.read_only_replication_conf()
