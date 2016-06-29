@@ -241,8 +241,6 @@ class MySQL:
             self.query("STOP SLAVE;")
             self.read_only_replication_conf()
 
-            log_file, log_pos = self.last_log_file_and_position()
-
             self.query("""
             CHANGE MASTER TO
                 MASTER_AUTO_POSITION = 1,
@@ -251,8 +249,6 @@ class MySQL:
                 MASTER_USER='%(username)s',
                 MASTER_PASSWORD='%(password)s';
             """ % {
-                "log_file": log_file,
-                "log_pos": log_pos,
                 "hostname": leader.hostname,
                 "port": leader.port,
                 "username": leader.username,
@@ -330,31 +326,22 @@ read-only     = 0
 
     # returns the greater of master or follower position
     def last_operation(self):
-        logger.debug("######## last_operation")
-        log_file, log_pos = self.last_log_file_and_position()
-        return self.comparative_position(log_file, log_pos)
-
-    def last_log_file_and_position(self):
-        log_file, log_pos, follower_log_file, follower_log_pos = (None, None, None, None);
+        logger.debug("######## executed_gtid_set")
+        executed_gtid_set = []
+        op_count = 0
 
         leader_status = self.query("SHOW MASTER STATUS;").fetch_row()
         if leader_status:
-            log_file, log_pos = leader_status[0][0], leader_status[0][1]
-
-        follower_status = self.query("SHOW SLAVE STATUS;").fetch_row()
-        if follower_status:
-            follower_log_file, follower_log_pos = follower_status[0][5], follower_status[0][6]
-
-        return self.largest_log_file_and_pos(log_file, log_pos, follower_log_file, follower_log_pos)
-
-    def comparative_position(self, log_file, log_pos):
-        if log_file == None or log_pos == None:
-            return 0.0
+            for gtid_set in leader_status[0][4].split(','):
+                executed_gtid_set.append(gtid_set.split(':'))
         else:
-            return float(log_file.split('.')[1] + '.{0:08d}'.format(int(log_pos)))
+            follower_status = self.query("SHOW SLAVE STATUS;").fetch_row()
+            for gtid_set in follower_status[0][52].split(','):
+                executed_gtid_set.append(gtid_set.split(':'))
 
-    def largest_log_file_and_pos(self, log_file, log_pos, follower_log_file, follower_log_pos):
-        if self.comparative_position(log_file, log_pos) > self.comparative_position(follower_log_file, follower_log_pos):
-            return (log_file, log_pos)
-        else:
-            return (follower_log_file, follower_log_pos)
+        for executed_gtid in executed_gtid_set:
+            host, ops_range = executed_gtid
+            start, end = ops_range.split('-')
+            op_count += int(end) - int(start)
+
+        return op_count
