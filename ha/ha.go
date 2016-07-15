@@ -18,7 +18,7 @@ type SingleLeaderHA struct {
 	loopTicker <-chan time.Time
 
 	// we need to ensure we interact with the FSM and service in atomic units
-	*sync.Mutex
+	sync.Mutex
 }
 
 type SingleLeaderHAConfig struct {
@@ -35,17 +35,21 @@ func NewSingleLeaderHA(config *SingleLeaderHAConfig) *SingleLeaderHA {
 		memberc:    config.FSM.MemberCh(),
 		loopTicker: time.Tick(config.UpdateWait),
 	}
+
 }
 
 func (ha *SingleLeaderHA) init() error {
 
 	// TODO: make this exp backoff
+	fmt.Println("checking up to date")
 	for !ha.fsm.CompletedRestore() {
 		time.Sleep(500 * time.Millisecond)
+		fmt.Println("checking up to date")
 	}
+	fmt.Println("is up to date")
 
 	eb := backoff.NewExponentialBackOff()
-	eb.InitialInterval = 100 * time.Millisecond
+	eb.InitialInterval = 2000 * time.Millisecond
 	eb.MaxInterval = 10 * time.Second
 	eb.MaxElapsedTime = 0 * time.Second
 	// Only have 1 init ever in life of a cluster
@@ -61,16 +65,23 @@ func (ha *SingleLeaderHA) init() error {
 		}
 
 		if hasInit {
+			if err := ha.service.Initialize(); err != nil {
+				fmt.Println("init err")
+				return err
+			}
+			if err := ha.service.Start(); err != nil {
+				fmt.Println("start err", err.Error())
+				return err
+			}
+
+			fmt.Println("Getting leader")
 			lead, err := ha.service.AsFSMLeader()
 			if err != nil {
 				return err
 			}
+			fmt.Println("forcing leader")
 
 			if err := ha.fsm.ForceLeader(lead); err != nil {
-				return err
-			}
-
-			if err := ha.service.Initialize(); err != nil {
 				return err
 			}
 		} else {
@@ -102,6 +113,7 @@ func (ha *SingleLeaderHA) init() error {
 
 func (ha *SingleLeaderHA) raceRetryForInit(eb *backoff.ExponentialBackOff) (bool, error) {
 	for {
+		fmt.Println("isuing a race for init")
 		hasInit, err := ha.fsm.RaceForInit(eb.NextBackOff())
 		switch err {
 		case nil:
@@ -136,9 +148,11 @@ func (ha *SingleLeaderHA) waitForLeader(eb *backoff.ExponentialBackOff) (fsm.Lea
 
 func (ha *SingleLeaderHA) Run() error {
 	// Setup since we don't know how long the cluster we're joining has been active
+	fmt.Println("starting ha init")
 	if err := ha.init(); err != nil {
 		return err
 	}
+	fmt.Println("ended ha init")
 
 	//TODO: Add ready and updated field to Canoe so we know it is up to date.
 	// 	For now probably a non-issue
@@ -163,30 +177,38 @@ func (ha *SingleLeaderHA) RunCycle() error {
 	ha.Lock()
 	defer ha.Unlock()
 
+	fmt.Println("in run cycle")
 	if ha.service.IsHealthy() {
+		fmt.Println("we are healthy")
 		member, err := ha.service.AsFSMMember()
 		if err != nil {
+			fmt.Println("error in getting member")
 			return err
 		}
 
 		if err := ha.fsm.RefreshMember(member.ID()); err != nil {
+			fmt.Println("error refreshing member")
 			return err
 		}
 
 		isLeader, err := ha.isLeader()
 		if err != nil {
+			fmt.Println("error getting leader")
 			return err
 		}
 		if isLeader {
 			if err := ha.fsm.RefreshLeader(); err != nil {
+				fmt.Println("error refreshing leader")
 				return err
 			}
 		}
 	} else if !ha.service.IsRunning() {
+		fmt.Println("we are not healthy and not running")
 		if err := ha.service.Start(); err != nil {
 			return err
 		}
 	} else {
+		fmt.Println("we are not healthy running")
 		if err := ha.service.Restart(); err != nil {
 			return err
 		}

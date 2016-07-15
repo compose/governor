@@ -1,11 +1,12 @@
 loop_wait: 1000 #milliseconds
-data_dir: data/postgres0 #canoe and pg data will go here
+data_dir: "data/postgres0" #canoe and pg data will go here
 fsm:
   raft_port: 1234
   api_port: 1244
-  bootstrap_peers:
-    - http://localhost:1245
-  bootstrap_node: true  #TODO: Alter canoe to allow set-list of bootstrap peers
+  #bootstrap_peers:
+          #- http://localhost:1245
+  #TODO: Alter canoe to allow set-list of bootstrap peers
+  is_bootstrap: true  
   # cluster_id: 1234
   leader_ttl: 3000 #milliseconds
   member_ttl: 3000 #milliseconds
@@ -14,7 +15,7 @@ postgresql:
   listen: 127.0.0.1:5432
   maximum_lag_on_failover: 1048576 # 1 megabyte in bytes
   replication:
-    username: replicator
+    username: replication
     password: rep-pass
     network:  127.0.0.1/32
   parameters:

@@ -4,10 +4,10 @@ import (
 	"bytes"
 	"database/sql"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"github.com/compose/governor/fsm"
 	_ "github.com/lib/pq"
+	"github.com/pkg/errors"
 	"io/ioutil"
 	"log"
 	"net/url"
@@ -51,7 +51,7 @@ func NewPostgresql(config *PostgresqlConfig) (*postgresql, error) {
 	}
 	pg.port = port
 
-	db, err := sql.Open("postgres", pg.connectionString())
+	db, err := sql.Open("postgres", pg.localControlConnectionString())
 	if err != nil {
 		return nil, err
 	}
@@ -108,12 +108,18 @@ func (c *clusterMember) connect() (*sql.DB, error) {
 
 func (p *postgresql) connectionString() string {
 	// TODO: look into verfying ssl
-	return fmt.Sprintf("postgres://%s:%s@%s:%d/postgres?sslmode=require",
+	// TODO: ENABLE SSL!!!
+	return fmt.Sprintf("postgres://%s:%s@%s:%d/postgres?sslmode=disable",
 		p.replication.Username,
 		p.replication.Password,
 		p.host,
 		p.port,
 	)
+}
+
+func (p *postgresql) localControlConnectionString() string {
+	//TODO ENABLE SSL!!!
+	return fmt.Sprintf("postgres://%s:%d/postgres?sslmode=disable", p.host, p.port)
 }
 
 func (p *postgresql) AsFSMLeader() (fsm.Leader, error) {
@@ -207,7 +213,7 @@ func (p *postgresql) healthierThan(c2 *clusterMember) bool {
 	}
 
 	result := p.conn.QueryRow(
-		"SELECT %s - (pg_last_xlog_replay_location() - '0/000000'::pg_lsn) AS bytes;",
+		"SELECT $1 - (pg_last_xlog_replay_location() - '0/000000'::pg_lsn) AS bytes;",
 		location)
 
 	var diff int
@@ -222,11 +228,21 @@ func (p *postgresql) healthierThan(c2 *clusterMember) bool {
 }
 
 func (p *postgresql) xlogLocation() (int, error) {
-	result := p.conn.QueryRow("SELECT pg_last_xlog_replay_location() - '0/0000000'::pg_lsn;")
+	rows, err := p.conn.Query("SELECT pg_last_xlog_replay_location() - '0/0000000'::pg_lsn")
+	if err != nil {
+		fmt.Println("err early")
+		return 0, errors.Wrap(err, "Error querying pg for pg_last_xlog_replay_location")
+	}
+
+	rows.Next()
 
 	var location int
-	if err := result.Scan(&location); err != nil {
-		return 0, err
+	if err := rows.Scan(&location); err != nil {
+		switch {
+		case err == sql.ErrNoRows:
+			fmt.Println("no rows")
+		}
+		return 0, errors.Wrap(err, "Error querying pg for pg_last_xlog_replay_location")
 	}
 
 	return location, nil
@@ -286,12 +302,65 @@ func (p *postgresql) deleteReplSlot(member fsm.Member) error {
 }
 
 func (p *postgresql) Initialize() error {
+	p.atomicLock.Lock()
+	defer p.atomicLock.Unlock()
+
+	fmt.Println("intern init")
+	if err := p.initialize(); err != nil {
+		return err
+	}
+	fmt.Println("intern start")
+	if err := p.start(); err != nil {
+		return err
+	}
+	fmt.Println("intern repl")
+	if err := p.createReplicationUser(); err != nil {
+		return err
+	}
+	fmt.Println("intern stop")
+	if err := p.stop(); err != nil {
+		fmt.Println("stop err")
+		return err
+	}
+	fmt.Println("write hba")
+	if err := p.writePGHBA(); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (p *postgresql) initialize() error {
 	p.opLock.Lock()
 	defer p.opLock.Unlock()
 
 	cmd := exec.Command("initdb", "-D", p.dataDir)
 	log.Printf("Initializing Postgres database.")
+
 	return cmd.Run()
+}
+func (p *postgresql) writePGHBA() error {
+	hbaConf, err := os.OpenFile(fmt.Sprintf("%s/pg_hba.conf", p.dataDir),
+		os.O_RDWR|os.O_APPEND,
+		os.FileMode(0666),
+	)
+	defer hbaConf.Close()
+	_, err = hbaConf.WriteString(
+		fmt.Sprintf("host replication %s %s md5",
+			p.replication.Username,
+			p.replication.Network,
+		),
+	)
+	return err
+}
+
+func (p *postgresql) createReplicationUser() error {
+	query := fmt.Sprintf("CREATE USER %s WITH REPLICATION ENCRYPTED PASSWORD '%s'",
+		p.replication.Username,
+		p.replication.Password,
+	)
+	_, err := p.conn.Exec(query)
+	return err
 }
 
 func (p *postgresql) Ping() error {
@@ -319,12 +388,23 @@ func (p *postgresql) start() error {
 	p.opLock.Lock()
 	defer p.opLock.Unlock()
 
+	startArg := "start"
+	waitFlag := "-w"
+	dataArg := fmt.Sprintf("-D %s", p.dataDir)
+
+	combinedArgs := strings.Join([]string{startArg, waitFlag, dataArg}, " ")
+
+	argFields := strings.Fields(combinedArgs)
+
+	// make sure we pass the -o string as it's own member of the slice
+	argFields = append(argFields, "-o")
+	argFields = append(argFields, p.serverOptions())
+
 	cmd := exec.Command("pg_ctl",
-		"start",
-		"-w",
-		fmt.Sprintf("-D %s", p.dataDir),
-		fmt.Sprintf("-s '%s'", p.serverOptions()),
+		argFields...,
 	)
+
+	fmt.Println("Issuing start command")
 
 	return cmd.Run()
 }
@@ -337,6 +417,7 @@ func (p *postgresql) removePIDFile() error {
 			return err
 		}
 		log.Printf("Removed %s", pidPath)
+
 	}
 
 	return nil
@@ -359,11 +440,16 @@ func (p *postgresql) stop() error {
 	p.opLock.Lock()
 	defer p.opLock.Unlock()
 
+	stopArg := "stop"
+	waitFlag := "-w"
+	dataArg := fmt.Sprintf("-D %s", p.dataDir)
+
+	combinedArgs := strings.Join([]string{stopArg, waitFlag, dataArg}, " ")
+
+	argFields := strings.Fields(combinedArgs)
+
 	cmd := exec.Command("pg_ctl",
-		"stop",
-		"-w",
-		fmt.Sprintf("-D %s", p.dataDir),
-		"-m fast",
+		argFields...,
 	)
 
 	return cmd.Run()
@@ -383,13 +469,6 @@ func (p *postgresql) Restart() error {
 
 	return cmd.Run()
 }
-
-// Already implements ping from *sql.DB
-/*
-func (p *postgresql) Ping() error {
-	return p.nnection.Ping()
-}
-*/
 
 func (p *postgresql) IsHealthy() bool {
 	if !p.IsRunning() {
@@ -536,9 +615,17 @@ func (p *postgresql) NeedsInitialization() bool {
 }
 
 func (p *postgresql) IsRunning() bool {
+
+	statusArg := "status"
+	dataArg := fmt.Sprintf("-D %s", p.dataDir)
+
+	combinedArgs := strings.Join([]string{statusArg, dataArg}, " ")
+
+	argFields := strings.Fields(combinedArgs)
+
 	cmd := exec.Command("pg_ctl",
-		"status",
-		fmt.Sprintf("-D %s", p.dataDir))
+		argFields...,
+	)
 
 	if err := cmd.Run(); err != nil {
 		return false
@@ -549,9 +636,9 @@ func (p *postgresql) IsRunning() bool {
 func (p *postgresql) serverOptions() string {
 	var buffer bytes.Buffer
 
-	buffer.WriteString(fmt.Sprintf("-c listen_addresses=%s -c port=%s", p.host, p.port))
+	buffer.WriteString(fmt.Sprintf("-clisten_addresses=%s -cport=%d", p.host, p.port))
 	for setting, value := range p.parameters {
-		buffer.WriteString(fmt.Sprintf(" -c \"%s=%s\"", setting, value))
+		buffer.WriteString(fmt.Sprintf(" -c%s=\"%v\"", setting, value))
 	}
 	return buffer.String()
 }

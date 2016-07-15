@@ -135,17 +135,17 @@ func (f *fsm) applyDeleteStaleLeader(cmdData []byte) error {
 
 	if f.leader != nil {
 		update.OldLeader = f.leader.Data
-	}
 
-	if cmd.Time >= f.leader.Time+f.leader.TTL {
-		f.leader = nil
-		select {
+		if cmd.Time >= f.leader.Time+f.leader.TTL {
+			f.leader = nil
+			select {
 
-		case f.leaderc <- update:
-		default:
+			case f.leaderc <- update:
+			default:
+			}
+		} else if cmd.Time < f.leader.Time {
+			return ErrorBadTTLTimestamp
 		}
-	} else if cmd.Time < f.leader.Time {
-		return ErrorBadTTLTimestamp
 	}
 
 	return nil
@@ -506,7 +506,7 @@ func (f *fsm) proposeCmd(op string, data interface{}) error {
 	}
 
 	newCmd := &command{
-		Op:   deleteStaleLeaderOp,
+		Op:   op,
 		Data: reqData,
 	}
 

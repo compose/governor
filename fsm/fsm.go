@@ -76,6 +76,7 @@ func (f *fsm) RaceForInit(timeout time.Duration) (bool, error) {
 	}
 
 	select {
+	// This can get dangerous. Find a better way
 	case <-time.After(timeout):
 		return false, ErrorRaceTimedOut
 	case val := <-f.gotInit:
@@ -104,6 +105,7 @@ func NewGovernorFSM(config *Config) (SingleLeaderFSM, error) {
 		syncTicker: time.Tick(500 * time.Millisecond),
 		stopc:      make(chan struct{}),
 		stoppedc:   make(chan struct{}),
+		gotInit:    make(chan bool),
 	}
 
 	raftConfig := &canoe.NodeConfig{
@@ -112,6 +114,7 @@ func NewGovernorFSM(config *Config) (SingleLeaderFSM, error) {
 		RaftPort:       config.RaftPort,
 		APIPort:        config.APIPort,
 		BootstrapPeers: config.BootstrapPeers,
+		BootstrapNode:  config.BootstrapNode,
 		DataDir:        config.DataDir,
 		SnapshotConfig: &canoe.SnapshotConfig{
 			Interval: 20 * time.Second,
@@ -129,10 +132,13 @@ func NewGovernorFSM(config *Config) (SingleLeaderFSM, error) {
 		return nil, err
 	}
 
-	// TODO: do this a couple times since a single could get lost
+	// TODO: Have this come down a chan
 	// TODO: Perhaps have this expire on occasion and force a touching update
-	if err := newFSM.proposeNewNodeUpToDate(); err != nil {
-		return nil, err
+	for !newFSM.CompletedRestore() {
+		if err := newFSM.proposeNewNodeUpToDate(); err != nil {
+			return nil, err
+		}
+		time.Sleep(100 * time.Millisecond)
 	}
 
 	return newFSM, nil
