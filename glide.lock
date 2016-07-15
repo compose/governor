@@ -1,5 +1,5 @@
 hash: a5c992a97dbf4018fff65092241d3d177d9518af42abd3d8e61be7e8e347c7a9
-updated: 2016-07-15T10:22:57.332396263-07:00
+updated: 2016-07-15T11:43:46.109766401-07:00
 imports:
 - name: github.com/beorn7/perks
   version: 3ac7bf7a47d159a033b107610db8a1b6575507a4
@@ -85,7 +85,7 @@ imports:
 - name: github.com/xiang90/probing
   version: 6a0cc1ae81b4cc11db5e491e030e4b98fba79c19
 - name: golang.org/x/net
-  version: a728288923b47049b2ce791836767ffbe964a5bd
+  version: e90d6d0afc4c315a0d87a568ae68577cc15149a0
   subpackages:
   - context
 - name: gopkg.in/yaml.v2
