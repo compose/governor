@@ -1,0 +1,8 @@
+package: github.com/compose/governor
+import:
+- package: github.com/cenk/backoff
+- package: github.com/compose/canoe
+- package: github.com/gorilla/mux
+- package: github.com/lib/pq
+- package: github.com/pkg/errors
+- package: gopkg.in/yaml.v2

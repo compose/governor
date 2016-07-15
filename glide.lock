@@ -1,0 +1,99 @@
+hash: de8f5ccd4b5a448a8a9afab2d55f471d1ee97636d7ac84a710401e929c7a85b2
+updated: 2016-07-15T12:32:54.296650382-07:00
+imports:
+- name: github.com/beorn7/perks
+  version: 28c68c10cefab47469786e74fa350155c1a7eacc
+  subpackages:
+  - quantile
+- name: github.com/cenk/backoff
+  version: ""
+- name: github.com/compose/canoe
+  version: 28c68c10cefab47469786e74fa350155c1a7eacc
+- name: github.com/coreos/etcd
+  version: ""
+  subpackages:
+  - etcdserver/stats
+  - pkg/types
+  - raft
+  - raft/raftpb
+  - rafthttp
+  - snap
+  - wal
+  - wal/walpb
+  - pkg/httputil
+  - pkg/ioutil
+  - pkg/logutil
+  - pkg/pbutil
+  - pkg/transport
+  - version
+  - pkg/fileutil
+  - snap/snappb
+  - pkg/crc
+  - pkg/tlsutil
+- name: github.com/coreos/go-semver
+  version: 28c68c10cefab47469786e74fa350155c1a7eacc
+  subpackages:
+  - semver
+- name: github.com/coreos/go-systemd
+  version: 28c68c10cefab47469786e74fa350155c1a7eacc
+  subpackages:
+  - journal
+- name: github.com/coreos/pkg
+  version: 28c68c10cefab47469786e74fa350155c1a7eacc
+  subpackages:
+  - capnslog
+- name: github.com/gogo/protobuf
+  version: 28c68c10cefab47469786e74fa350155c1a7eacc
+  subpackages:
+  - proto
+- name: github.com/golang/protobuf
+  version: 28c68c10cefab47469786e74fa350155c1a7eacc
+  subpackages:
+  - proto
+- name: github.com/gorilla/context
+  version: 28c68c10cefab47469786e74fa350155c1a7eacc
+- name: github.com/gorilla/mux
+  version: ""
+- name: github.com/lib/pq
+  version: 28c68c10cefab47469786e74fa350155c1a7eacc
+  subpackages:
+  - oid
+- name: github.com/matttproud/golang_protobuf_extensions
+  version: 28c68c10cefab47469786e74fa350155c1a7eacc
+  subpackages:
+  - pbutil
+- name: github.com/pkg/errors
+  version: 28c68c10cefab47469786e74fa350155c1a7eacc
+- name: github.com/prometheus/client_golang
+  version: 28c68c10cefab47469786e74fa350155c1a7eacc
+  subpackages:
+  - prometheus
+- name: github.com/prometheus/client_model
+  version: 28c68c10cefab47469786e74fa350155c1a7eacc
+  subpackages:
+  - go
+- name: github.com/prometheus/common
+  version: 28c68c10cefab47469786e74fa350155c1a7eacc
+  subpackages:
+  - expfmt
+  - internal/bitbucket.org/ww/goautoneg
+  - model
+- name: github.com/prometheus/procfs
+  version: 28c68c10cefab47469786e74fa350155c1a7eacc
+- name: github.com/satori/go.uuid
+  version: ""
+- name: github.com/sirupsen/logrus
+  version: ""
+- name: github.com/xiang90/probing
+  version: 28c68c10cefab47469786e74fa350155c1a7eacc
+- name: golang.org/x/net
+  version: 28c68c10cefab47469786e74fa350155c1a7eacc
+  subpackages:
+  - context
+- name: golang.org/x/sys
+  version: 28c68c10cefab47469786e74fa350155c1a7eacc
+  subpackages:
+  - unix
+- name: gopkg.in/yaml.v2
+  version: 28c68c10cefab47469786e74fa350155c1a7eacc
+testImports: []

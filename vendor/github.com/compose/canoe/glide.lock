@@ -1,0 +1,89 @@
+hash: e7163db2f90811735f11ea33acf4f41ae17f41cc3cf77e4aebc311c69d15e8a3
+updated: 2016-07-15T12:18:55.192943489-07:00
+imports:
+- name: github.com/beorn7/perks
+  version: 2b608b7b6f3af57fa54d9a23c6c714ecc5de0759
+  subpackages:
+  - quantile
+- name: github.com/cenk/backoff
+  version: ""
+- name: github.com/coreos/etcd
+  version: ""
+  subpackages:
+  - etcdserver/stats
+  - pkg/types
+  - raft
+  - raft/raftpb
+  - rafthttp
+  - snap
+  - wal
+  - wal/walpb
+  - pkg/httputil
+  - pkg/ioutil
+  - pkg/logutil
+  - pkg/pbutil
+  - pkg/transport
+  - version
+  - pkg/fileutil
+  - snap/snappb
+  - pkg/crc
+  - pkg/tlsutil
+- name: github.com/coreos/go-semver
+  version: 2b608b7b6f3af57fa54d9a23c6c714ecc5de0759
+  subpackages:
+  - semver
+- name: github.com/coreos/go-systemd
+  version: 2b608b7b6f3af57fa54d9a23c6c714ecc5de0759
+  subpackages:
+  - journal
+- name: github.com/coreos/pkg
+  version: 2b608b7b6f3af57fa54d9a23c6c714ecc5de0759
+  subpackages:
+  - capnslog
+- name: github.com/gogo/protobuf
+  version: 2b608b7b6f3af57fa54d9a23c6c714ecc5de0759
+  subpackages:
+  - proto
+- name: github.com/golang/protobuf
+  version: 2b608b7b6f3af57fa54d9a23c6c714ecc5de0759
+  subpackages:
+  - proto
+- name: github.com/gorilla/context
+  version: 2b608b7b6f3af57fa54d9a23c6c714ecc5de0759
+- name: github.com/gorilla/mux
+  version: ""
+- name: github.com/matttproud/golang_protobuf_extensions
+  version: 2b608b7b6f3af57fa54d9a23c6c714ecc5de0759
+  subpackages:
+  - pbutil
+- name: github.com/prometheus/client_golang
+  version: 2b608b7b6f3af57fa54d9a23c6c714ecc5de0759
+  subpackages:
+  - prometheus
+- name: github.com/prometheus/client_model
+  version: 2b608b7b6f3af57fa54d9a23c6c714ecc5de0759
+  subpackages:
+  - go
+- name: github.com/prometheus/common
+  version: 2b608b7b6f3af57fa54d9a23c6c714ecc5de0759
+  subpackages:
+  - expfmt
+  - internal/bitbucket.org/ww/goautoneg
+  - model
+- name: github.com/prometheus/procfs
+  version: 2b608b7b6f3af57fa54d9a23c6c714ecc5de0759
+- name: github.com/satori/go.uuid
+  version: ""
+- name: github.com/sirupsen/logrus
+  version: ""
+- name: github.com/xiang90/probing
+  version: 2b608b7b6f3af57fa54d9a23c6c714ecc5de0759
+- name: golang.org/x/net
+  version: 2b608b7b6f3af57fa54d9a23c6c714ecc5de0759
+  subpackages:
+  - context
+- name: golang.org/x/sys
+  version: 2b608b7b6f3af57fa54d9a23c6c714ecc5de0759
+  subpackages:
+  - unix
+testImports: []
