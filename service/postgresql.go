@@ -5,11 +5,11 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	log "github.com/Sirupsen/logrus"
 	"github.com/compose/governor/fsm"
 	_ "github.com/lib/pq"
 	"github.com/pkg/errors"
 	"io/ioutil"
-	"log"
 	"net/url"
 	"os"
 	"os/exec"
@@ -230,7 +230,6 @@ func (p *postgresql) healthierThan(c2 *clusterMember) bool {
 func (p *postgresql) xlogLocation() (int, error) {
 	rows, err := p.conn.Query("SELECT pg_last_xlog_replay_location() - '0/0000000'::pg_lsn")
 	if err != nil {
-		fmt.Println("err early")
 		return 0, errors.Wrap(err, "Error querying pg for pg_last_xlog_replay_location")
 	}
 
@@ -240,7 +239,6 @@ func (p *postgresql) xlogLocation() (int, error) {
 	if err := rows.Scan(&location); err != nil {
 		switch {
 		case err == sql.ErrNoRows:
-			fmt.Println("no rows")
 		}
 		return 0, errors.Wrap(err, "Error querying pg for pg_last_xlog_replay_location")
 	}
@@ -262,7 +260,7 @@ func (p *postgresql) lastOperation() (int, error) {
 func (p *postgresql) AddMembers(members []fsm.Member) error {
 	for _, member := range members {
 		if err := p.addReplSlot(member); err != nil {
-			return err
+			return errors.Wrap(err, "Issue adding members to PG")
 		}
 	}
 	return nil
@@ -274,7 +272,7 @@ func (p *postgresql) addReplSlot(member fsm.Member) error {
 		"BEGIN SELECT slot_name INTO somevar FROM pg_replication_slots WHERE slot_name = $1 LIMIT 1; "+
 		"IF NOT FOUND THEN PERFORM pg_create_physical_replication_slot($1); END IF; END$$;", member.ID())
 	if err != nil {
-		return err
+		return errors.Wrap(err, "Error querying pg for replication slot addition")
 	}
 
 	return nil
@@ -283,7 +281,7 @@ func (p *postgresql) addReplSlot(member fsm.Member) error {
 func (p *postgresql) DeleteMembers(members []fsm.Member) error {
 	for _, member := range members {
 		if err := p.deleteReplSlot(member); err != nil {
-			return err
+			return errors.Wrap(err, "Issue deleting members from PG")
 		}
 	}
 	return nil
@@ -295,7 +293,7 @@ func (p *postgresql) deleteReplSlot(member fsm.Member) error {
 		"BEGIN SELECT slot_name INTO somevar FROM pg_replication_slots WHERE slot_name = $1 LIMIT 1; "+
 		"IF FOUND THEN PERFORM pg_drop_replication_slot($1); END IF; END$$;", member.ID())
 	if err != nil {
-		return err
+		return errors.Wrap(err, "Error querying pg for replication slot deletion")
 	}
 
 	return nil
@@ -305,26 +303,20 @@ func (p *postgresql) Initialize() error {
 	p.atomicLock.Lock()
 	defer p.atomicLock.Unlock()
 
-	fmt.Println("intern init")
 	if err := p.initialize(); err != nil {
-		return err
+		return errors.Wrap(err, "Error initializing PG")
 	}
-	fmt.Println("intern start")
 	if err := p.start(); err != nil {
-		return err
+		return errors.Wrap(err, "Error starting PG in initialization")
 	}
-	fmt.Println("intern repl")
 	if err := p.createReplicationUser(); err != nil {
-		return err
+		return errors.Wrap(err, "Error creating replication user for PG")
 	}
-	fmt.Println("intern stop")
 	if err := p.stop(); err != nil {
-		fmt.Println("stop err")
-		return err
+		return errors.Wrap(err, "Error stopping PG in initialization")
 	}
-	fmt.Println("write hba")
 	if err := p.writePGHBA(); err != nil {
-		return err
+		return errors.Wrap(err, "Error writing pg_hba")
 	}
 
 	return nil
@@ -335,7 +327,9 @@ func (p *postgresql) initialize() error {
 	defer p.opLock.Unlock()
 
 	cmd := exec.Command("initdb", "-D", p.dataDir)
-	log.Printf("Initializing Postgres database.")
+	log.WithFields(log.Fields{
+		"package": "postgresql",
+	}).Info("Initializing Postgres database.")
 
 	return cmd.Run()
 }
@@ -345,13 +339,18 @@ func (p *postgresql) writePGHBA() error {
 		os.FileMode(0666),
 	)
 	defer hbaConf.Close()
+
+	if err != nil {
+		return errors.Wrap(err, "Error opening pg_hba.conf")
+	}
+
 	_, err = hbaConf.WriteString(
 		fmt.Sprintf("host replication %s %s md5",
 			p.replication.Username,
 			p.replication.Network,
 		),
 	)
-	return err
+	return errors.Wrap(err, "Error writing to pg_hba.conf")
 }
 
 func (p *postgresql) createReplicationUser() error {
@@ -360,11 +359,11 @@ func (p *postgresql) createReplicationUser() error {
 		p.replication.Password,
 	)
 	_, err := p.conn.Exec(query)
-	return err
+	return errors.Wrapf(err, "Creating the replication priv user %s", p.replication.Username)
 }
 
 func (p *postgresql) Ping() error {
-	return p.conn.Ping()
+	return errors.Wrap(p.conn.Ping(), "Error pinging PG")
 }
 
 func (p *postgresql) Start() error {
@@ -378,10 +377,10 @@ func (p *postgresql) Start() error {
 	}
 
 	if err := p.removePIDFile(); err != nil {
-		return err
+		return errors.Wrap(err, "Error removing PID file")
 	}
 
-	return p.start()
+	return errors.Wrap(p.start(), "Error starting PG")
 }
 
 func (p *postgresql) start() error {
@@ -404,9 +403,16 @@ func (p *postgresql) start() error {
 		argFields...,
 	)
 
-	fmt.Println("Issuing start command")
+	log.WithFields(log.Fields{
+		"package": "postgresql",
+	}).Info("Starting Postgresql")
 
-	return cmd.Run()
+	var runtimeErrs bytes.Buffer
+	cmd.Stderr = &runtimeErrs
+
+	err := cmd.Run()
+
+	return errors.Wrapf(err, "Error running pg_ctl command: %s", string(runtimeErrs.Bytes()))
 }
 
 func (p *postgresql) removePIDFile() error {
@@ -414,9 +420,11 @@ func (p *postgresql) removePIDFile() error {
 
 	if _, err := os.Stat(pidPath); err == nil {
 		if err := os.Remove(pidPath); err != nil {
-			return err
+			return errors.Wrap(err, "error in syscall to remove PID")
 		}
-		log.Printf("Removed %s", pidPath)
+		log.WithFields(log.Fields{
+			"package": "postgresql",
+		}).Infof("Removed %s", pidPath)
 
 	}
 
@@ -433,7 +441,7 @@ func (p *postgresql) Stop() error {
 		}
 	}
 
-	return p.stop()
+	return errors.Wrap(p.stop(), "Error stopping PG")
 }
 
 func (p *postgresql) stop() error {
@@ -452,7 +460,7 @@ func (p *postgresql) stop() error {
 		argFields...,
 	)
 
-	return cmd.Run()
+	return errors.Wrap(cmd.Run(), "Error running pg_ctl stop command")
 }
 
 // Restart restarts the PG instance.
@@ -467,7 +475,7 @@ func (p *postgresql) Restart() error {
 		"-m fast",
 	)
 
-	return cmd.Run()
+	return errors.Wrap(cmd.Run(), "Error running pg_ctl restart command")
 }
 
 func (p *postgresql) IsHealthy() bool {
@@ -484,7 +492,7 @@ func (p *postgresql) Promote() error {
 	defer p.atomicLock.Unlock()
 
 	if err := p.promote(); err != nil {
-		return err
+		return errors.Wrap(err, "Error promiting node")
 	}
 
 	return nil
@@ -499,7 +507,7 @@ func (p *postgresql) promote() error {
 		"-w",
 		fmt.Sprintf("-D %s", p.dataDir),
 	)
-	return cmd.Run()
+	return errors.Wrap(cmd.Run(), "Error running pg_ctl promote command")
 }
 
 // Consider removing repl slots
@@ -508,11 +516,11 @@ func (p *postgresql) Demote(leader fsm.Leader) error {
 	defer p.atomicLock.Unlock()
 
 	if err := p.writeRecoveryConf(leader); err != nil {
-		return err
+		return errors.Wrap(err, "Error writing recovery conf")
 	}
 	if p.IsRunning() {
 		if err := p.Restart(); err != nil {
-			return err
+			return errors.Wrap(err, "Error restarting PG")
 		}
 	}
 
@@ -524,7 +532,7 @@ func (p *postgresql) syncFromLeader(leader fsm.Leader) error {
 	defer p.opLock.Unlock()
 
 	cmd := exec.Command("pg_basebackup", leader.(*clusterMember).ConnectionString)
-	return cmd.Run()
+	return errors.Wrap(cmd.Run(), "Error running pg_basebackup command")
 }
 
 var ErrorAlreadyLeader = errors.New("The node is already a leader")
@@ -546,7 +554,7 @@ func (p *postgresql) FollowTheLeader(leader fsm.Leader) error {
 
 	if p.NeedsInitialization() {
 		if err := p.syncFromLeader(leader); err != nil {
-			return err
+			return errors.Wrap(err, "Error syncing from leader")
 		}
 	}
 
@@ -576,11 +584,11 @@ func (p *postgresql) FollowTheLeader(leader fsm.Leader) error {
 	*/
 
 	if err := p.writeRecoveryConf(leader); err != nil {
-		return err
+		return errors.Wrap(err, "Error writing recovery conf")
 	}
 	if p.IsRunning() {
 		if err := p.Restart(); err != nil {
-			return err
+			return errors.Wrap(err, "Error restarting PG")
 		}
 	}
 
@@ -592,11 +600,11 @@ func (p *postgresql) FollowNoLeader() error {
 	defer p.atomicLock.Unlock()
 
 	if err := p.writeRecoveryConf(nil); err != nil {
-		return err
+		return errors.Wrap(err, "Error writing recovery conf")
 	}
 	if p.IsRunning() {
 		if err := p.Restart(); err != nil {
-			return err
+			return errors.Wrap(err, "Error restarting PG")
 		}
 	}
 
@@ -609,6 +617,9 @@ func (p *postgresql) NeedsInitialization() bool {
 		if os.IsNotExist(err) {
 			return true
 		}
+		log.WithFields(log.Fields{
+			"package": "governor",
+		})
 		log.Fatal(err)
 	}
 	return len(files) == 0
@@ -649,10 +660,10 @@ func (p *postgresql) writeRecoveryConf(leader fsm.Leader) error {
 		os.O_RDWR|os.O_CREATE|os.O_TRUNC,
 		os.FileMode(0666),
 	)
-	if err != nil {
-		return err
-	}
 	defer conf.Close()
+	if err != nil {
+		return errors.Wrap(err, "Error opening recovery.conf")
+	}
 
 	conf.WriteString(fmt.Sprintf(
 		"standby_mode = 'on'\n"+
@@ -663,9 +674,10 @@ func (p *postgresql) writeRecoveryConf(leader fsm.Leader) error {
 	if leader != nil {
 		parsedLead, err := url.Parse(leader.(*clusterMember).ConnectionString)
 		if err != nil {
-			return err
+			return errors.Wrap(err, "Error parsing PG connection string")
 		}
 		pass, _ := parsedLead.User.Password()
+		// TODO: Add error
 		conf.WriteString(fmt.Sprintf(
 			"primary_conninfo = 'user=%s password=%s host=%s port=%s sslmode=prefer sslcompression=1'",
 			parsedLead.User.Username(),

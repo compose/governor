@@ -2,9 +2,9 @@ package main
 
 import (
 	"fmt"
-	"log"
 	//"os/exec"
 	"flag"
+	log "github.com/Sirupsen/logrus"
 	"github.com/compose/governor/fsm"
 	"github.com/compose/governor/ha"
 	"github.com/compose/governor/service"
@@ -15,30 +15,44 @@ import (
 var configuration_file = flag.String("config", "./postgresql0.yml", "the yaml based configuration file.")
 
 func main() {
+
+	log.WithFields(log.Fields{
+		"package": "governor",
+	}).Infof("Loading configuration")
 	configuration, err := LoadConfiguration("postgres0.yml")
 	if err != nil {
-		log.Fatalf("Error loading governor configuration: %v", err)
+		log.Fatalf("Error loading governor configuration: %+v", err)
 	}
 
 	dataDir, err := filepath.Abs(configuration.DataDir)
 	if err != nil {
-		log.Fatalf("Error with data dir path: %s", err.Error())
+		log.Fatalf("Error with data dir path: %+v", err)
 	}
 	configuration.DataDir = dataDir
 
 	configuration.Postgresql.DataDirectory = fmt.Sprintf("%s%s", configuration.DataDir, "/pg/")
 	configuration.FSM.DataDir = fmt.Sprintf("%s%s", configuration.DataDir, "/fsm/")
 
+	log.WithFields(log.Fields{
+		"package": "governor",
+	}).Infof("Configuration Loaded")
+
 	pg, err := service.NewPostgresql(configuration.Postgresql)
 	if err != nil {
-		log.Fatalf("Error creating new postgresql")
+		log.Fatalf("Error creating new postgresql: %+v", err)
 	}
 
-	fmt.Println("Creating new FSM")
+	log.WithFields(log.Fields{
+		"package": "governor",
+	}).Infof("Creating new FSM")
 	singleLeaderState, err := fsm.NewGovernorFSM(configuration.FSM)
 	if err != nil {
-		log.Fatalf("Error creating new FSM")
+		log.Fatalf("Error creating new FSM, %+v", err)
 	}
+
+	log.WithFields(log.Fields{
+		"package": "governor",
+	}).Infof("Successfully created new FSM")
 
 	haConf := &ha.SingleLeaderHAConfig{
 		Service:    pg,
@@ -46,9 +60,16 @@ func main() {
 		UpdateWait: time.Duration(configuration.LoopWait) * time.Millisecond,
 	}
 
-	fmt.Println("Creating new HA")
+	log.WithFields(log.Fields{
+		"package": "governor",
+	}).Infof("Creating new HA")
+
 	ha := ha.NewSingleLeaderHA(haConf)
-	fmt.Println("Running new HA")
+
+	log.WithFields(log.Fields{
+		"package": "governor",
+	}).Infof("Running new HA")
+
 	if err := ha.Run(); err != nil {
 		log.Fatalf("Error Running HA, %+v", err)
 	}
