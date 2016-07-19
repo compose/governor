@@ -136,7 +136,7 @@ func (p *postgresql) AsFSMLeader() (fsm.Leader, error) {
 }
 
 func (p *postgresql) AsFSMMember() (fsm.Member, error) {
-	xlogPos, err := p.xlogLocation()
+	xlogPos, err := p.lastOperation()
 	if err != nil {
 		return nil, err
 	}
@@ -175,11 +175,12 @@ func (p *postgresql) FSMMemberTemplate() fsm.Member {
 
 // TODO: Change interface to (bool, error)???
 func (p *postgresql) IsHealthiestOf(leader fsm.Leader, members []fsm.Member) bool {
-	selfLocation, err := p.xlogLocation()
+	selfLocation, err := p.lastOperation()
 	if err != nil {
 		return false
 	}
 
+	// If we're behind the leader's position we know we aren't healthy
 	if leader.(*clusterMember).WalPosition-selfLocation > p.maximumLagOnFailover {
 		return false
 	}
@@ -207,7 +208,7 @@ func (p *postgresql) healthierThan(c2 *clusterMember) bool {
 	// Perhaps bencmark closing vs not closing
 	defer conn.Close()
 
-	location, err := p.xlogLocation()
+	location, err := p.lastOperation()
 	if err != nil {
 		return false
 	}
@@ -227,26 +228,22 @@ func (p *postgresql) healthierThan(c2 *clusterMember) bool {
 	return true
 }
 
-func (p *postgresql) xlogLocation() (int, error) {
-	rows, err := p.conn.Query("SELECT pg_last_xlog_replay_location() - '0/0000000'::pg_lsn")
-	if err != nil {
-		return 0, errors.Wrap(err, "Error querying pg for pg_last_xlog_replay_location")
-	}
-
-	rows.Next()
+func (p *postgresql) xlogReplayLocation() (int, error) {
+	row := p.conn.QueryRow("SELECT pg_last_xlog_replay_location() - '0/0000000'::pg_lsn;")
 
 	var location int
-	if err := rows.Scan(&location); err != nil {
+	if err := row.Scan(&location); err != nil {
 		switch {
 		case err == sql.ErrNoRows:
+			log.Warnf("No rows for query")
 		}
-		return 0, errors.Wrap(err, "Error querying pg for pg_last_xlog_replay_location")
+		return 0, errors.Wrap(err, "Error scanning query for pg_last_xlog_replay_location")
 	}
 
 	return location, nil
 }
 
-func (p *postgresql) lastOperation() (int, error) {
+func (p *postgresql) xlogLocation() (int, error) {
 	result := p.conn.QueryRow("SELECT pg_current_xlog_location() - '0/0000000'::pg_lsn;")
 
 	var location int
@@ -255,6 +252,15 @@ func (p *postgresql) lastOperation() (int, error) {
 	}
 
 	return location, nil
+}
+
+func (p *postgresql) lastOperation() (int, error) {
+	// TODO: have leader check be atomic query
+	if p.RunningAsLeader() {
+		return p.xlogLocation()
+	} else {
+		return p.xlogReplayLocation()
+	}
 }
 
 func (p *postgresql) AddMembers(members []fsm.Member) error {
@@ -545,7 +551,7 @@ func (p *postgresql) RunningAsLeader() bool {
 		panic(err)
 	}
 
-	return inRecovery
+	return !inRecovery
 }
 
 func (p *postgresql) FollowTheLeader(leader fsm.Leader) error {
