@@ -2,9 +2,10 @@ package fsm
 
 import (
 	"encoding/json"
-	"errors"
+	log "github.com/Sirupsen/logrus"
 	"github.com/compose/canoe"
 	"github.com/gorilla/mux"
+	"github.com/pkg/errors"
 	"reflect"
 	"sync"
 	"time"
@@ -72,7 +73,7 @@ func (f *fsm) RaceForInit(timeout time.Duration) (bool, error) {
 	}
 
 	if err := f.proposeRaceForInit(); err != nil {
-		return false, err
+		return false, errors.Wrap(err, "Error proposing race for init")
 	}
 
 	select {
@@ -121,32 +122,52 @@ func NewGovernorFSM(config *Config) (SingleLeaderFSM, error) {
 		},
 	}
 
+	log.WithFields(log.Fields{
+		"package": "fsm",
+	}).Info("Creating canoe node")
+
 	node, err := canoe.NewNode(raftConfig)
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrap(err, "Error creating new canoe node")
 	}
+
+	log.WithFields(log.Fields{
+		"package": "fsm",
+	}).Info("Successfully created canoe node")
 
 	newFSM.raft = node
 
+	log.WithFields(log.Fields{
+		"package": "fsm",
+	}).Info("Starting Governor FSM")
 	if err := newFSM.start(); err != nil {
-		return nil, err
+		return nil, errors.Wrap(err, "Error starting FSM")
 	}
+	log.WithFields(log.Fields{
+		"package": "fsm",
+	}).Info("Successfully started Governor FSM")
 
+	log.WithFields(log.Fields{
+		"package": "fsm",
+	}).Info("Waiting for Governor FSM to catch up on raft logs")
 	// TODO: Have this come down a chan
 	// TODO: Perhaps have this expire on occasion and force a touching update
 	for !newFSM.CompletedRestore() {
 		if err := newFSM.proposeNewNodeUpToDate(); err != nil {
-			return nil, err
+			return nil, errors.Wrap(err, "Error proposing new node up to date")
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
+	log.WithFields(log.Fields{
+		"package": "fsm",
+	}).Info("Governor FSM up to date")
 
 	return newFSM, nil
 }
 
 func (f *fsm) start() error {
 	if err := f.raft.Start(); err != nil {
-		return err
+		return errors.Wrap(err, "Error starting raft")
 	}
 
 	go func(f *fsm) {
@@ -169,7 +190,7 @@ func (f *fsm) run() error {
 		select {
 		case <-ttlTicker.C:
 			if err := f.proposeDeleteStaleLeader(); err != nil {
-				return err
+				return errors.Wrap(err, "Error proposing delete stale leader")
 			}
 		}
 	}
@@ -190,19 +211,19 @@ func (f *fsm) LeaderCh() <-chan *LeaderUpdate {
 }
 
 func (f *fsm) RaceForLeader(leader Leader) error {
-	return f.proposeRaceLeader(leader)
+	return errors.Wrap(f.proposeRaceLeader(leader), "Error proposing race for leader")
 }
 
 func (f *fsm) RefreshLeader() error {
-	return f.proposeRefreshLeader()
+	return errors.Wrap(f.proposeRefreshLeader(), "Error proposing refresh leader")
 }
 
 func (f *fsm) ForceLeader(leader Leader) error {
-	return f.proposeForceLeader(leader)
+	return errors.Wrap(f.proposeForceLeader(leader), "Error proposing force leader")
 }
 
 func (f *fsm) DeleteLeader() error {
-	return f.proposeDeleteLeader()
+	return errors.Wrap(f.proposeDeleteLeader(), "Error proposing delete leader")
 }
 
 func (f *fsm) Leader(leader Leader) (bool, error) {
@@ -214,7 +235,7 @@ func (f *fsm) Leader(leader Leader) (bool, error) {
 	}
 
 	if err := leader.UnmarshalFSM(f.leader.Data); err != nil {
-		return false, err
+		return false, errors.Wrap(err, "Error unmarshaling leader")
 	}
 
 	return true, nil
@@ -225,15 +246,15 @@ func (f *fsm) MemberCh() <-chan *MemberUpdate {
 }
 
 func (f *fsm) SetMember(member Member) error {
-	return f.proposeSetMember(member)
+	return errors.Wrap(f.proposeSetMember(member), "Error proposing set member")
 }
 
 func (f *fsm) RefreshMember(id string) error {
-	return f.proposeRefreshMember(id)
+	return errors.Wrap(f.proposeRefreshMember(id), "Error proposing refresh member")
 }
 
 func (f *fsm) DeleteMember(id string) error {
-	return f.proposeDeleteMember(id)
+	return errors.Wrap(f.proposeDeleteMember(id), "Error proposing delete member")
 }
 
 func (f *fsm) Member(id string, member Member) (bool, error) {
@@ -242,7 +263,7 @@ func (f *fsm) Member(id string, member Member) (bool, error) {
 	if data, ok := f.members[id]; ok {
 		err := member.UnmarshalFSM(data.Data)
 		if err != nil {
-			return false, err
+			return false, errors.Wrap(err, "Error unmarshaling member")
 		}
 		return true, nil
 	}
@@ -273,7 +294,7 @@ func (f *fsm) Members(members interface{}) error {
 	for _, memberBackend := range f.members {
 		member := reflect.New(sliceType).Interface().(Member)
 		if err := member.UnmarshalFSM(memberBackend.Data); err != nil {
-			return err
+			return errors.Wrap(err, "Error unmarshaling member")
 		}
 
 		retMembers.Set(
@@ -298,7 +319,7 @@ func (f *fsm) CompletedRestore() bool {
 
 func (f *fsm) Cleanup() error {
 	if err := f.raft.Stop(); err != nil {
-		return err
+		return errors.Wrap(err, "Error stopping raft")
 	}
 	close(f.stopc)
 
@@ -313,7 +334,7 @@ func (f *fsm) Cleanup() error {
 
 func (f *fsm) Destroy() error {
 	if err := f.raft.Destroy(); err != nil {
-		return err
+		return errors.Wrap(err, "Error destroying raft")
 	}
 
 	close(f.stopc)
@@ -345,7 +366,7 @@ func (f *fsm) Restore(data canoe.SnapshotData) error {
 	var fsmSnap fsmSnapshot
 
 	if err := json.Unmarshal(data, &fsmSnap); err != nil {
-		return err
+		return errors.Wrap(err, "Error unmarshaling snapshot")
 	}
 
 	f.Lock()
@@ -361,10 +382,12 @@ func (f *fsm) Restore(data canoe.SnapshotData) error {
 func (f *fsm) Snapshot() (canoe.SnapshotData, error) {
 	f.Lock()
 	defer f.Unlock()
-	return json.Marshal(&fsmSnapshot{
+	retData, err := json.Marshal(&fsmSnapshot{
 		Members: f.members,
 		Leader:  f.leader,
 	})
+
+	return retData, errors.Wrap(err, "Error marshalling fsm snapshot")
 }
 
 func (f *fsm) RegisterAPI(router *mux.Router) {

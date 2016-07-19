@@ -174,6 +174,8 @@ func (p *postgresql) FSMMemberTemplate() fsm.Member {
 }
 
 // TODO: Change interface to (bool, error)???
+// TODO: Have HA ask FSM to give update of WAL and pass those in
+//	 That way we have consensus in the FSM of which node should be elected
 func (p *postgresql) IsHealthiestOf(leader fsm.Leader, members []fsm.Member) bool {
 	selfLocation, err := p.lastOperation()
 	if err != nil {

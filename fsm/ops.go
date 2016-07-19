@@ -2,7 +2,9 @@ package fsm
 
 import (
 	"encoding/json"
+	log "github.com/Sirupsen/logrus"
 	"github.com/compose/canoe"
+	"github.com/pkg/errors"
 	"time"
 )
 
@@ -26,58 +28,62 @@ type command struct {
 	Data []byte `json:"data"`
 }
 
+func init() {
+	log.SetLevel(log.DebugLevel)
+}
+
 // Apply completes the FSM requirement
 // TODO: Add initialization Race?
 func (f *fsm) Apply(log canoe.LogData) error {
 	var cmd command
 	if err := json.Unmarshal(log, &cmd); err != nil {
-		return err
+		return errors.Wrap(err, "Error unmarshaling command")
 	}
 
 	switch cmd.Op {
 	case forceLeaderOp:
 		if err := f.applyForceLeader(cmd.Data); err != nil {
-			return err
+			return errors.Wrap(err, "Error applying force leader op")
 		}
 	case raceLeaderOp:
 		if err := f.applyRaceLeader(cmd.Data); err != nil {
-			return err
+			return errors.Wrap(err, "Error applying race leader op")
 		}
 	case refreshLeaderOp:
 		if err := f.applyRefreshLeader(cmd.Data); err != nil {
-			return err
+			return errors.Wrap(err, "Error Applying refresh leader op")
 		}
 	case deleteLeaderOp:
 		if err := f.applyDeleteLeader(); err != nil {
-			return err
+			return errors.Wrap(err, "Error applying delete leader op")
 		}
 	case deleteStaleLeaderOp:
 		if err := f.applyDeleteStaleLeader(cmd.Data); err != nil {
-			return err
+			return errors.Wrap(err, "Error applying delete stale leader op")
 		}
 	case setMemberOp:
 		if err := f.applySetMember(cmd.Data); err != nil {
-			return err
+			return errors.Wrap(err, "Error applying set member op")
 		}
 	case refreshMemberOp:
 		if err := f.applyRefreshMember(cmd.Data); err != nil {
-			return err
+			return errors.Wrap(err, "Error applying refresh member op")
 		}
 	case deleteMemberOp:
 		if err := f.applyDeleteMember(cmd.Data); err != nil {
-			return err
+			return errors.Wrap(err, "Error applying delete member op")
 		}
 	case deleteStaleMembersOp:
 		if err := f.applyDeleteStaleMembers(cmd.Data); err != nil {
-			return err
+			return errors.Wrap(err, "Error applying delete stale members op")
 		}
 	case newNodeUpToDateOp:
 		if err := f.applyNewNodeUpToDate(cmd.Data); err != nil {
-			return err
+			return errors.Wrap(err, "Error applying new node update to date op")
 		}
 	case raceForInitOp:
 		if err := f.applyRaceForInit(cmd.Data); err != nil {
-			return err
+			return errors.Wrap(err, "Error applying apply race for init op")
 		}
 	default:
 		return ErrorUnknownOperation
@@ -89,6 +95,10 @@ type deleteLeaderCmd struct {
 }
 
 func (f *fsm) applyDeleteLeader() error {
+	log.WithFields(log.Fields{
+		"package": "fsm",
+	}).Debug("Applying delete leader log")
+
 	update := &LeaderUpdate{
 		Type: LeaderUpdateDeletedType,
 	}
@@ -113,7 +123,7 @@ func (f *fsm) applyDeleteLeader() error {
 func (f *fsm) proposeDeleteLeader() error {
 	req := &deleteLeaderCmd{}
 
-	return f.proposeCmd(deleteLeaderOp, req)
+	return errors.Wrap(f.proposeCmd(deleteLeaderOp, req), "Error proposing delete cmd")
 }
 
 type deleteStaleLeaderCmd struct {
@@ -121,9 +131,13 @@ type deleteStaleLeaderCmd struct {
 }
 
 func (f *fsm) applyDeleteStaleLeader(cmdData []byte) error {
+	log.WithFields(log.Fields{
+		"package": "fsm",
+	}).Debug("Applying delete stale leader log")
+
 	var cmd deleteStaleLeaderCmd
 	if err := json.Unmarshal(cmdData, &cmd); err != nil {
-		return err
+		return errors.Wrap(err, "Error unmarshaling stale leader cmd")
 	}
 
 	update := &LeaderUpdate{
@@ -154,7 +168,7 @@ func (f *fsm) proposeDeleteStaleLeader() error {
 		Time: time.Now().UnixNano(),
 	}
 
-	return f.proposeCmd(deleteStaleLeaderOp, req)
+	return errors.Wrap(f.proposeCmd(deleteStaleLeaderOp, req), "Error proposing delete stale leader command")
 }
 
 type forceLeaderCmd struct {
@@ -162,9 +176,13 @@ type forceLeaderCmd struct {
 }
 
 func (f *fsm) applyForceLeader(cmdData []byte) error {
+	log.WithFields(log.Fields{
+		"package": "fsm",
+	}).Debug("Applying force leader log")
+
 	var cmd forceLeaderCmd
 	if err := json.Unmarshal(cmdData, &cmd); err != nil {
-		return err
+		return errors.Wrap(err, "Error unmarshaling force leader cmd")
 	}
 
 	update := &LeaderUpdate{
@@ -193,7 +211,7 @@ func (f *fsm) applyForceLeader(cmdData []byte) error {
 func (f *fsm) proposeForceLeader(leader Leader) error {
 	data, err := leader.MarshalFSM()
 	if err != nil {
-		return err
+		return errors.Wrap(err, "Error marshaling fsm leader")
 	}
 
 	req := &forceLeaderCmd{
@@ -205,7 +223,7 @@ func (f *fsm) proposeForceLeader(leader Leader) error {
 		},
 	}
 
-	return f.proposeCmd(forceLeaderOp, req)
+	return errors.Wrap(f.proposeCmd(forceLeaderOp, req), "Error proposing force leader command")
 }
 
 type raceLeaderCmd struct {
@@ -213,9 +231,13 @@ type raceLeaderCmd struct {
 }
 
 func (f *fsm) applyRaceLeader(cmdData []byte) error {
+	log.WithFields(log.Fields{
+		"package": "fsm",
+	}).Debug("Applying race leader log")
+
 	var cmd raceLeaderCmd
 	if err := json.Unmarshal(cmdData, &cmd); err != nil {
-		return err
+		return errors.Wrap(err, "Error unmarshaling race leader command")
 	}
 
 	f.Lock()
@@ -240,7 +262,7 @@ func (f *fsm) applyRaceLeader(cmdData []byte) error {
 func (f *fsm) proposeRaceLeader(leader Leader) error {
 	data, err := leader.MarshalFSM()
 	if err != nil {
-		return err
+		return errors.Wrap(err, "Error unmarshalling leader")
 	}
 
 	req := &raceLeaderCmd{
@@ -251,7 +273,7 @@ func (f *fsm) proposeRaceLeader(leader Leader) error {
 			TTL:  f.leaderTTL,
 		},
 	}
-	return f.proposeCmd(raceLeaderOp, req)
+	return errors.Wrap(f.proposeCmd(raceLeaderOp, req), "Error proposing leader race command")
 }
 
 type refreshLeaderCmd struct {
@@ -259,9 +281,13 @@ type refreshLeaderCmd struct {
 }
 
 func (f *fsm) applyRefreshLeader(cmdData []byte) error {
+	log.WithFields(log.Fields{
+		"package": "fsm",
+	}).Debug("Applying refresh leader log")
+
 	var cmd refreshLeaderCmd
 	if err := json.Unmarshal(cmdData, &cmd); err != nil {
-		return err
+		return errors.Wrap(err, "Error unmarshaling refresh leader cmd")
 	}
 
 	f.Lock()
@@ -277,7 +303,7 @@ func (f *fsm) proposeRefreshLeader() error {
 		Time: time.Now().UnixNano(),
 	}
 
-	return f.proposeCmd(refreshLeaderOp, req)
+	return errors.Wrap(f.proposeCmd(refreshLeaderOp, req), "Error proposing refresh leader cmd")
 }
 
 type setMemberCmd struct {
@@ -285,9 +311,13 @@ type setMemberCmd struct {
 }
 
 func (f *fsm) applySetMember(cmdData []byte) error {
+	log.WithFields(log.Fields{
+		"package": "fsm",
+	}).Debug("Applying set member log")
+
 	var cmd setMemberCmd
 	if err := json.Unmarshal(cmdData, &cmd); err != nil {
-		return err
+		return errors.Wrap(err, "Error unmarshaling set member command")
 	}
 
 	f.Lock()
@@ -311,7 +341,7 @@ func (f *fsm) applySetMember(cmdData []byte) error {
 func (f *fsm) proposeSetMember(member Member) error {
 	data, err := member.MarshalFSM()
 	if err != nil {
-		return err
+		return errors.Wrap(err, "Error marshaling set member command")
 	}
 
 	req := &setMemberCmd{
@@ -323,7 +353,7 @@ func (f *fsm) proposeSetMember(member Member) error {
 		},
 	}
 
-	return f.proposeCmd(setMemberOp, req)
+	return errors.Wrap(f.proposeCmd(setMemberOp, req), "Error proposing set member command")
 }
 
 type refreshMemberCmd struct {
@@ -332,9 +362,13 @@ type refreshMemberCmd struct {
 }
 
 func (f *fsm) applyRefreshMember(cmdData []byte) error {
+	log.WithFields(log.Fields{
+		"package": "fsm",
+	}).Debug("Applying refresh member log")
+
 	var cmd refreshMemberCmd
 	if err := json.Unmarshal(cmdData, &cmd); err != nil {
-		return err
+		return errors.Wrap(err, "Error unmarshalling refresh member command")
 	}
 
 	f.Lock()
@@ -353,7 +387,7 @@ func (f *fsm) proposeRefreshMember(id string) error {
 		Time: time.Now().UnixNano(),
 	}
 
-	return f.proposeCmd(refreshMemberOp, req)
+	return errors.Wrap(f.proposeCmd(refreshMemberOp, req), "Error proposing refresh member cmd")
 }
 
 type deleteMemberCmd struct {
@@ -361,9 +395,13 @@ type deleteMemberCmd struct {
 }
 
 func (f *fsm) applyDeleteMember(cmdData []byte) error {
+	log.WithFields(log.Fields{
+		"package": "fsm",
+	}).Debug("Applying delete member log")
+
 	var cmd deleteMemberCmd
 	if err := json.Unmarshal(cmdData, &cmd); err != nil {
-		return err
+		return errors.Wrap(err, "Error unmarshalling delete member cmd")
 	}
 
 	f.Lock()
@@ -389,7 +427,7 @@ func (f *fsm) proposeDeleteMember(id string) error {
 		ID: id,
 	}
 
-	return f.proposeCmd(deleteMemberOp, req)
+	return errors.Wrap(f.proposeCmd(deleteMemberOp, req), "Error proposing delete member op")
 }
 
 type deleteStaleMembersCmd struct {
@@ -397,9 +435,13 @@ type deleteStaleMembersCmd struct {
 }
 
 func (f *fsm) applyDeleteStaleMembers(cmdData []byte) error {
+	log.WithFields(log.Fields{
+		"package": "fsm",
+	}).Debug("Applying delete stale members log")
+
 	var cmd deleteStaleMembersCmd
 	if err := json.Unmarshal(cmdData, &cmd); err != nil {
-		return err
+		return errors.Wrap(err, "Error unmarshalling delete stale members command")
 	}
 
 	f.Lock()
@@ -430,17 +472,22 @@ func (f *fsm) proposeDeleteStaleMember() error {
 		Time: time.Now().UnixNano(),
 	}
 
-	return f.proposeCmd(deleteStaleMembersOp, req)
+	return errors.Wrap(f.proposeCmd(deleteStaleMembersOp, req), "Error proposing delete stale members command")
 }
 
 type newNodeUpToDateCmd struct {
 	ID uint64 `json:"id"`
 }
 
+// TODO: Have timestamp here for confirmation
 func (f *fsm) applyNewNodeUpToDate(cmdData []byte) error {
+	log.WithFields(log.Fields{
+		"package": "fsm",
+	}).Debug("Applying new node up to date log")
+
 	var cmd newNodeUpToDateCmd
 	if err := json.Unmarshal(cmdData, &cmd); err != nil {
-		return err
+		return errors.Wrap(err, "Error unmarshaling new node up to date cmd")
 	}
 
 	f.Lock()
@@ -458,7 +505,7 @@ func (f *fsm) proposeNewNodeUpToDate() error {
 		ID: f.UniqueID(),
 	}
 
-	return f.proposeCmd(newNodeUpToDateOp, req)
+	return errors.Wrap(f.proposeCmd(newNodeUpToDateOp, req), "Error proposing new node up to date cmd")
 }
 
 type raceForInitCmd struct {
@@ -466,9 +513,13 @@ type raceForInitCmd struct {
 }
 
 func (f *fsm) applyRaceForInit(cmdData []byte) error {
+	log.WithFields(log.Fields{
+		"package": "fsm",
+	}).Debug("Applying race for init log")
+
 	var cmd raceForInitCmd
 	if err := json.Unmarshal(cmdData, &cmd); err != nil {
-		return err
+		return errors.Wrap(err, "Error unmarshaling race for init command")
 	}
 
 	f.Lock()
@@ -492,13 +543,13 @@ func (f *fsm) proposeRaceForInit() error {
 		ID: f.UniqueID(),
 	}
 
-	return f.proposeCmd(raceForInitOp, req)
+	return errors.Wrap(f.proposeCmd(raceForInitOp, req), "Error proposing race for init cmd")
 }
 
 func (f *fsm) proposeCmd(op string, data interface{}) error {
 	reqData, err := json.Marshal(data)
 	if err != nil {
-		return err
+		return errors.Wrap(err, "Error unmarshaling cmd data")
 	}
 
 	newCmd := &command{
@@ -508,8 +559,8 @@ func (f *fsm) proposeCmd(op string, data interface{}) error {
 
 	newCmdData, err := json.Marshal(newCmd)
 	if err != nil {
-		return err
+		return errors.Wrap(err, "Error marshaling new final command")
 	}
 
-	return f.raft.Propose(newCmdData)
+	return errors.Wrap(f.raft.Propose(newCmdData), "Error proposing to raft")
 }
