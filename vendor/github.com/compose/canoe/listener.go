@@ -1,7 +1,7 @@
 package canoe
 
 import (
-	"errors"
+	"github.com/pkg/errors"
 	"net"
 	"time"
 )
@@ -14,7 +14,7 @@ type stoppableListener struct {
 func newStoppableListener(addr string, stopc <-chan struct{}) (*stoppableListener, error) {
 	ln, err := net.Listen("tcp", addr)
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrap(err, "Error establishing TCP listen conn")
 	}
 	return &stoppableListener{ln.(*net.TCPListener), stopc}, nil
 }

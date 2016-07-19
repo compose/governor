@@ -2,8 +2,8 @@ package canoe
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
+	"github.com/pkg/errors"
 	"golang.org/x/net/context"
 	"strconv"
 	"sync"
@@ -208,23 +208,23 @@ func (rn *Node) Start() error {
 
 	if walEnabled {
 		if err := rn.initPersistentStorage(); err != nil {
-			return err
+			return errors.Wrap(err, "Error initializing persistent storage")
 		}
 	}
 
 	if rejoinCluster {
 		if err := rn.restoreRaft(); err != nil {
-			return err
+			return errors.Wrap(err, "Error restoring raft")
 		}
 		rn.node = raft.RestartNode(rn.raftConfig)
 	} else {
 		// TODO: Fix the mess that is transport initialization
 		if err := rn.attachTransport(); err != nil {
-			return err
+			return errors.Wrap(err, "Error attaching raft transport")
 		}
 
 		if err := rn.transport.Start(); err != nil {
-			return err
+			return errors.Wrap(err, "Error starting raft transport")
 		}
 		if rn.bootstrapNode {
 			rn.node = raft.StartNode(rn.raftConfig, []raft.Peer{raft.Peer{ID: rn.id}})
@@ -234,39 +234,39 @@ func (rn *Node) Start() error {
 	}
 
 	if err := rn.advanceTicksForElection(); err != nil {
-		return err
+		return errors.Wrap(err, "Error optimizing election ticks")
 	}
 
 	rn.initialized = true
 
 	go func(rn *Node) {
 		if err := rn.scanReady(); err != nil {
-			panic(err)
+			rn.logger.Fatalf("%+v", err)
 		}
 	}(rn)
 
 	// Start config http service
 	go func(rn *Node) {
 		if err := rn.serveHTTP(); err != nil {
-			panic(err)
+			rn.logger.Fatalf("%+v", err)
 		}
 	}(rn)
 
 	// start raft
 	go func(rn *Node) {
 		if err := rn.serveRaft(); err != nil {
-			panic(err)
+			rn.logger.Fatalf("%+v", err)
 		}
 	}(rn)
 	rn.started = true
 
 	if rejoinCluster {
 		if err := rn.selfRejoinCluster(); err != nil {
-			return err
+			return errors.Wrap(err, "Error rejoining raft cluster")
 		}
 	} else if !rn.bootstrapNode {
 		if err := rn.addSelfToCluster(); err != nil {
-			return err
+			return errors.Wrap(err, "Error adding self to existing raft cluster")
 		}
 	}
 
@@ -302,7 +302,7 @@ func (rn *Node) Stop() error {
 // WARNING! - Destroy will recursively remove everything under <DataDir>/snap and <DataDir>/wal
 func (rn *Node) Destroy() error {
 	if err := rn.removeSelfFromCluster(); err != nil {
-		return err
+		return errors.Wrap(err, "Error removing self from existing cluster")
 	}
 	close(rn.stopc)
 	rn.transport.Stop()
@@ -492,7 +492,7 @@ func (rn *Node) proposePeerAddition(addReq *raftpb.ConfChange, async bool) error
 	}
 
 	if err := rn.node.ProposeConfChange(context.TODO(), *addReq); err != nil {
-		return err
+		return errors.Wrap(err, "Error proposing configuration change")
 	}
 
 	if async {
@@ -544,7 +544,7 @@ func (rn *Node) proposePeerDeletion(delReq *raftpb.ConfChange, async bool) error
 	}
 
 	if err := rn.node.ProposeConfChange(context.TODO(), *delReq); err != nil {
-		return err
+		return errors.Wrap(err, "Error proposing configuration change to raft")
 	}
 
 	if async {
@@ -555,7 +555,7 @@ func (rn *Node) proposePeerDeletion(delReq *raftpb.ConfChange, async bool) error
 	case <-observChan:
 		return nil
 	case <-time.After(10 * time.Second):
-		return rn.proposePeerDeletion(delReq, async)
+		return errors.Wrap(rn.proposePeerDeletion(delReq, async), "Error proposing peer deletion")
 
 	}
 }
@@ -600,7 +600,7 @@ func (rn *Node) scanReady() error {
 			rn.node.Tick()
 		case <-snapTicker.C:
 			if err := rn.createSnapAndCompact(false); err != nil {
-				return err
+				return errors.Wrap(err, "Error creating snapshot and compacting WAL")
 			}
 		case rd := <-rn.node.Ready():
 			if rn.wal != nil {
@@ -611,12 +611,12 @@ func (rn *Node) scanReady() error {
 
 			if !raft.IsEmptySnap(rd.Snapshot) {
 				if err := rn.processSnapshot(rd.Snapshot); err != nil {
-					return err
+					return errors.Wrap(err, "Error processing raft snapshot")
 				}
 			}
 
 			if err := rn.publishEntries(rd.CommittedEntries); err != nil {
-				return err
+				return errors.Wrap(err, "Error publishing raft entries")
 			}
 
 			rn.node.Advance()
@@ -632,7 +632,7 @@ func (rn *Node) restoreFSMFromSnapshot(raftSnap raftpb.Snapshot) error {
 
 	var snapStruct snapshot
 	if err := json.Unmarshal(raftSnap.Data, &snapStruct); err != nil {
-		return err
+		return errors.Wrap(err, "Error unmarshaling raft snapshot")
 	}
 
 	for id, info := range snapStruct.Metadata.Peers {
@@ -641,7 +641,7 @@ func (rn *Node) restoreFSMFromSnapshot(raftSnap raftpb.Snapshot) error {
 	}
 
 	if err := rn.fsm.Restore(SnapshotData(snapStruct.Data)); err != nil {
-		return err
+		return errors.Wrap(err, "Error restoring FSM from snapshot when calling external FSM")
 	}
 
 	return nil
@@ -649,14 +649,14 @@ func (rn *Node) restoreFSMFromSnapshot(raftSnap raftpb.Snapshot) error {
 
 func (rn *Node) processSnapshot(raftSnap raftpb.Snapshot) error {
 	if err := rn.restoreFSMFromSnapshot(raftSnap); err != nil {
-		return err
+		return errors.Wrap(err, "Error restoring FSM from snapshot")
 	}
 
 	if err := rn.persistSnapshot(raftSnap); err != nil {
-		return err
+		return errors.Wrap(err, "Error persisting snapshot to storage")
 	}
 	if err := rn.raftStorage.ApplySnapshot(raftSnap); err != nil {
-		return err
+		return errors.Wrap(err, "Error applying snapshot to mem raft storage")
 	}
 
 	rn.ReportSnapshot(rn.id, raft.SnapshotFinish)
@@ -695,7 +695,7 @@ func (p *snapshotMetadata) UnmarshalJSON(data []byte) error {
 	}{}
 
 	if err := json.Unmarshal(data, tmpStruct); err != nil {
-		return err
+		return errors.Wrap(err, "Error unmarshaling snapshot metadata")
 	}
 
 	p.Peers = make(map[uint64]confChangeNodeContext)
@@ -703,7 +703,7 @@ func (p *snapshotMetadata) UnmarshalJSON(data []byte) error {
 	for key, val := range tmpStruct.Peers {
 		convKey, err := strconv.ParseUint(key, 10, 64)
 		if err != nil {
-			return err
+			return errors.Wrap(err, "Error parsing IDs from peer map")
 		}
 		p.Peers[convKey] = val
 	}
@@ -716,7 +716,7 @@ func (rn *Node) createSnapAndCompact(force bool) error {
 	index := rn.node.Status().Applied
 	lastSnap, err := rn.raftStorage.Snapshot()
 	if err != nil {
-		return err
+		return errors.Wrap(err, "Error fetching last snapshot from in memory storage")
 	}
 
 	if index <= lastSnap.Metadata.Index && !force {
@@ -725,7 +725,7 @@ func (rn *Node) createSnapAndCompact(force bool) error {
 
 	fsmData, err := rn.fsm.Snapshot()
 	if err != nil {
-		return err
+		return errors.Wrap(err, "Error getting snapshot from FSM")
 	}
 
 	finalSnap := &snapshot{
@@ -737,20 +737,20 @@ func (rn *Node) createSnapAndCompact(force bool) error {
 
 	data, err := json.Marshal(finalSnap)
 	if err != nil {
-		return err
+		return errors.Wrap(err, "Error marshalling wrapped snapshot")
 	}
 
 	raftSnap, err := rn.raftStorage.CreateSnapshot(index, rn.lastConfState, []byte(data))
 	if err != nil {
-		return err
+		return errors.Wrap(err, "Error creating snapshot in memory storage")
 	}
 
 	if err = rn.raftStorage.Compact(raftSnap.Metadata.Index); err != nil {
-		return err
+		return errors.Wrap(err, "Error compacting memory storage after snapshot")
 	}
 
 	if err = rn.persistSnapshot(raftSnap); err != nil {
-		return err
+		return errors.Wrap(err, "Error persisting snapshot")
 	}
 
 	return nil
@@ -791,12 +791,14 @@ func (rn *Node) publishEntries(ents []raftpb.Entry) error {
 			// An FSM should be responsible for being efficient
 			// for high-load situations
 			if err := rn.fsm.Apply(LogData(entry.Data)); err != nil {
-				return err
+				return errors.Wrap(err, "Error with FSM applying log entry")
 			}
 
 		case raftpb.EntryConfChange:
 			var cc raftpb.ConfChange
-			cc.Unmarshal(entry.Data)
+			if err := cc.Unmarshal(entry.Data); err != nil {
+				return errors.Wrap(err, "Error unmarshaling ConfChange")
+			}
 			confState := rn.node.ApplyConfChange(cc)
 			rn.lastConfState = confState
 
@@ -805,7 +807,7 @@ func (rn *Node) publishEntries(ents []raftpb.Entry) error {
 				if len(cc.Context) > 0 {
 					var ctxData confChangeNodeContext
 					if err := json.Unmarshal(cc.Context, &ctxData); err != nil {
-						return err
+						return errors.Wrap(err, "Error unmarshalling add node request")
 					}
 
 					raftURL := fmt.Sprintf("http://%s:%d", ctxData.IP, ctxData.RaftPort)

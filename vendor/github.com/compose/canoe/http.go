@@ -3,11 +3,11 @@ package canoe
 import (
 	"bytes"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"github.com/coreos/etcd/pkg/types"
 	"github.com/coreos/etcd/raft/raftpb"
 	"github.com/gorilla/mux"
+	"github.com/pkg/errors"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -43,14 +43,14 @@ func (rn *Node) serveHTTP() error {
 	case <-rn.stopc:
 		return nil
 	default:
-		return err
+		return errors.Wrap(err, "Error serving HTTP API")
 	}
 }
 
 func (rn *Node) serveRaft() error {
 	ln, err := newStoppableListener(fmt.Sprintf(":%d", rn.raftPort), rn.stopc)
 	if err != nil {
-		return err
+		return errors.Wrap(err, "Error creating a new stoppable listener")
 	}
 
 	err = (&http.Server{Handler: rn.transport.Handler()}).Serve(ln)
@@ -59,7 +59,7 @@ func (rn *Node) serveRaft() error {
 	case <-rn.stopc:
 		return nil
 	default:
-		return err
+		return errors.Wrap(err, "Error serving raft http server")
 	}
 }
 
@@ -203,7 +203,7 @@ func (rn *Node) requestRejoinCluster() error {
 
 			var peerData peerMembershipResponseData
 			if err := json.Unmarshal(respData.Data, &peerData); err != nil {
-				return err
+				return errors.Wrap(err, "Error unmarshaling peer membership data")
 			}
 
 			return rn.addPeersFromRemote(peer, &peerData.httpPeerData)
@@ -219,7 +219,7 @@ func (rn *Node) requestRejoinCluster() error {
 func (rn *Node) addPeersFromRemote(remotePeer string, remoteMemberResponse *httpPeerData) error {
 	peerURL, err := url.Parse(remotePeer)
 	if err != nil {
-		return err
+		return errors.Wrap(err, "Error parsing remote peer string for URL")
 	}
 	addURL := fmt.Sprintf("http://%s:%s",
 		strings.Split(peerURL.Host, ":")[0],
@@ -286,10 +286,10 @@ func (rn *Node) requestSelfAddition() error {
 			// this ought to work since it should be added to cluster now
 			var peerData peerAdditionResponseData
 			if err := json.Unmarshal(respData.Data, &peerData); err != nil {
-				return err
+				return errors.Wrap(err, "Error unmarshaling peer addition response")
 			}
 
-			return rn.addPeersFromRemote(peer, &peerData.httpPeerData)
+			return errors.Wrap(rn.addPeersFromRemote(peer, &peerData.httpPeerData), "Error add peer from remote data")
 		}
 	}
 	if respData.Status == peerServiceStatusError {
@@ -310,7 +310,7 @@ func (rn *Node) requestSelfDeletion() error {
 		}
 		mar, err := json.Marshal(reqData)
 		if err != nil {
-			return err
+			return errors.Wrap(err, "Error marshalling peer deletion request")
 		}
 
 		reader := bytes.NewReader(mar)
@@ -318,19 +318,19 @@ func (rn *Node) requestSelfDeletion() error {
 
 		req, err := http.NewRequest("DELETE", peerAPIURL, reader)
 		if err != nil {
-			return err
+			return errors.Wrap(err, "Error creating new request for deleting peer")
 		}
 
 		req.Header.Set("Content-Type", "application/json")
 		resp, err = (&http.Client{}).Do(req)
 		if err != nil {
-			return err
+			return errors.Wrap(err, "Error sending request to delete myself")
 		}
 
 		defer resp.Body.Close()
 
 		if err = json.NewDecoder(resp.Body).Decode(&respData); err != nil {
-			return err
+			return errors.Wrap(err, "Error decoding response for self deletion")
 		}
 
 		if respData.Status == peerServiceStatusSuccess {
@@ -383,7 +383,9 @@ func (p *httpPeerData) MarshalJSON() ([]byte, error) {
 		tmpStruct.RemotePeers[strconv.FormatUint(key, 10)] = val
 	}
 
-	return json.Marshal(tmpStruct)
+	retJSON, err := json.Marshal(tmpStruct)
+
+	return retJSON, errors.Wrap(err, "Error marshalling JSON for http peer data")
 }
 
 func (p *httpPeerData) UnmarshalJSON(data []byte) error {
@@ -395,7 +397,7 @@ func (p *httpPeerData) UnmarshalJSON(data []byte) error {
 	}{}
 
 	if err := json.Unmarshal(data, tmpStruct); err != nil {
-		return err
+		return errors.Wrap(err, "Error unmarshalling http peer data")
 	}
 
 	p.APIPort = tmpStruct.APIPort
@@ -406,7 +408,7 @@ func (p *httpPeerData) UnmarshalJSON(data []byte) error {
 	for key, val := range tmpStruct.RemotePeers {
 		convKey, err := strconv.ParseUint(key, 10, 64)
 		if err != nil {
-			return err
+			return errors.Wrap(err, "Error parsing peer id from map")
 		}
 		p.RemotePeers[convKey] = val
 	}

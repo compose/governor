@@ -5,7 +5,7 @@ package canoe
 import (
 	"bytes"
 	"fmt"
-	"github.com/sirupsen/logrus"
+	"github.com/Sirupsen/logrus"
 	"os"
 	"runtime"
 	"sort"
@@ -13,9 +13,10 @@ import (
 	"time"
 )
 
+// DefaultLogger gives a default logger for canoe
 var DefaultLogger = &logrus.Logger{
 	Out: os.Stderr,
-	Formatter: &TextFormatter{
+	Formatter: &textFormatter{
 		Prefix:        "canoe",
 		FullTimestamp: true,
 	},
@@ -45,7 +46,8 @@ func miniTS() int {
 	return int(time.Since(baseTimestamp) / time.Second)
 }
 
-type TextFormatter struct {
+//
+type textFormatter struct {
 	// String that all logs are prefixed with
 	Prefix string
 
@@ -85,8 +87,8 @@ func prefixFieldClashes(data logrus.Fields) {
 		data["fields.level"] = l
 	}
 }
-func (f *TextFormatter) Format(entry *logrus.Entry) ([]byte, error) {
-	var keys []string = make([]string, 0, len(entry.Data))
+func (f *textFormatter) Format(entry *logrus.Entry) ([]byte, error) {
+	var keys = make([]string, 0, len(entry.Data))
 	for k := range entry.Data {
 		keys = append(keys, k)
 	}
@@ -127,7 +129,7 @@ func (f *TextFormatter) Format(entry *logrus.Entry) ([]byte, error) {
 	return b.Bytes(), nil
 }
 
-func (f *TextFormatter) printColored(b *bytes.Buffer, entry *logrus.Entry, keys []string, timestampFormat string) {
+func (f *textFormatter) printColored(b *bytes.Buffer, entry *logrus.Entry, keys []string, timestampFormat string) {
 	var levelColor int
 	switch entry.Level {
 	case logrus.DebugLevel:
@@ -165,7 +167,7 @@ func needsQuoting(text string) bool {
 	return false
 }
 
-func (f *TextFormatter) appendKeyValue(b *bytes.Buffer, key string, value interface{}) {
+func (f *textFormatter) appendKeyValue(b *bytes.Buffer, key string, value interface{}) {
 
 	b.WriteString(key)
 	b.WriteByte('=')

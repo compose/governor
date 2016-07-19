@@ -747,30 +747,34 @@ func (cc *ClientConn) RoundTrip(req *http.Request) (*http.Response, error) {
 	bodyWritten := false
 	ctx := reqContext(req)
 
+	handleReadLoopResponse := func(re resAndError) (*http.Response, error) {
+		res := re.res
+		if re.err != nil || res.StatusCode > 299 {
+			// On error or status code 3xx, 4xx, 5xx, etc abort any
+			// ongoing write, assuming that the server doesn't care
+			// about our request body. If the server replied with 1xx or
+			// 2xx, however, then assume the server DOES potentially
+			// want our body (e.g. full-duplex streaming:
+			// golang.org/issue/13444). If it turns out the server
+			// doesn't, they'll RST_STREAM us soon enough.  This is a
+			// heuristic to avoid adding knobs to Transport.  Hopefully
+			// we can keep it.
+			bodyWriter.cancel()
+			cs.abortRequestBodyWrite(errStopReqBodyWrite)
+		}
+		if re.err != nil {
+			cc.forgetStreamID(cs.ID)
+			return nil, re.err
+		}
+		res.Request = req
+		res.TLS = cc.tlsState
+		return res, nil
+	}
+
 	for {
 		select {
 		case re := <-readLoopResCh:
-			res := re.res
-			if re.err != nil || res.StatusCode > 299 {
-				// On error or status code 3xx, 4xx, 5xx, etc abort any
-				// ongoing write, assuming that the server doesn't care
-				// about our request body. If the server replied with 1xx or
-				// 2xx, however, then assume the server DOES potentially
-				// want our body (e.g. full-duplex streaming:
-				// golang.org/issue/13444). If it turns out the server
-				// doesn't, they'll RST_STREAM us soon enough.  This is a
-				// heuristic to avoid adding knobs to Transport.  Hopefully
-				// we can keep it.
-				bodyWriter.cancel()
-				cs.abortRequestBodyWrite(errStopReqBodyWrite)
-			}
-			if re.err != nil {
-				cc.forgetStreamID(cs.ID)
-				return nil, re.err
-			}
-			res.Request = req
-			res.TLS = cc.tlsState
-			return res, nil
+			return handleReadLoopResponse(re)
 		case <-respHeaderTimer:
 			cc.forgetStreamID(cs.ID)
 			if !hasBody || bodyWritten {
@@ -804,6 +808,12 @@ func (cc *ClientConn) RoundTrip(req *http.Request) (*http.Response, error) {
 			// forgetStreamID.
 			return nil, cs.resetErr
 		case err := <-bodyWriter.resc:
+			// Prefer the read loop's response, if available. Issue 16102.
+			select {
+			case re := <-readLoopResCh:
+				return handleReadLoopResponse(re)
+			default:
+			}
 			if err != nil {
 				return nil, err
 			}
@@ -1593,7 +1603,7 @@ func (rl *clientConnReadLoop) endStreamError(cs *clientStream, err error) {
 	}
 	cs.bufPipe.closeWithErrorAndCode(err, code)
 	delete(rl.activeRes, cs.ID)
-	if cs.req.Close || cs.req.Header.Get("Connection") == "close" {
+	if isConnectionCloseRequest(cs.req) {
 		rl.closeWhenIdle = true
 	}
 }
@@ -1865,4 +1875,10 @@ func (s bodyWriterState) scheduleBodyWrite() {
 	if s.timer.Stop() {
 		s.timer.Reset(s.delay)
 	}
+}
+
+// isConnectionCloseRequest reports whether req should use its own
+// connection for a single request and then close the connection.
+func isConnectionCloseRequest(req *http.Request) bool {
+	return req.Close || httplex.HeaderValuesContainsToken(req.Header["Connection"], "close")
 }

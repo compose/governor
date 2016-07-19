@@ -305,6 +305,31 @@ func (d *FileDescriptor) PackageName() string { return uniquePackageOf(d.FileDes
 // it is only valid inside the generated package.
 func (d *FileDescriptor) VarName() string { return fmt.Sprintf("fileDescriptor%v", FileName(d)) }
 
+// goPackageOption interprets the file's go_package option.
+// If there is no go_package, it returns ("", "", false).
+// If there's a simple name, it returns ("", pkg, true).
+// If the option implies an import path, it returns (impPath, pkg, true).
+func (d *FileDescriptor) goPackageOption() (impPath, pkg string, ok bool) {
+	pkg = d.GetOptions().GetGoPackage()
+	if pkg == "" {
+		return
+	}
+	ok = true
+	// The presence of a slash implies there's an import path.
+	slash := strings.LastIndex(pkg, "/")
+	if slash < 0 {
+		return
+	}
+	impPath, pkg = pkg, pkg[slash+1:]
+	// A semicolon-delimited suffix overrides the package name.
+	sc := strings.IndexByte(impPath, ';')
+	if sc < 0 {
+		return
+	}
+	impPath, pkg = impPath[:sc], impPath[sc+1:]
+	return
+}
+
 // goPackageName returns the Go package name to use in the
 // generated Go file.  The result explicit reports whether the name
 // came from an option go_package statement.  If explicit is false,
@@ -312,10 +337,8 @@ func (d *FileDescriptor) VarName() string { return fmt.Sprintf("fileDescriptor%v
 // or the input file name.
 func (d *FileDescriptor) goPackageName() (name string, explicit bool) {
 	// Does the file have a "go_package" option?
-	if opts := d.Options; opts != nil {
-		if pkg := opts.GetGoPackage(); pkg != "" {
-			return pkg, true
-		}
+	if _, pkg, ok := d.goPackageOption(); ok {
+		return pkg, true
 	}
 
 	// Does the file have a package clause?
@@ -324,6 +347,26 @@ func (d *FileDescriptor) goPackageName() (name string, explicit bool) {
 	}
 	// Use the file base name.
 	return baseName(d.GetName()), false
+}
+
+// goFileName returns the output name for the generated Go file.
+func (d *FileDescriptor) goFileName() string {
+	name := *d.Name
+	if ext := path.Ext(name); ext == ".proto" || ext == ".protodevel" {
+		name = name[:len(name)-len(ext)]
+	}
+	name += ".pb.go"
+
+	// Does the file have a "go_package" option?
+	// If it does, it may override the filename.
+	if impPath, _, ok := d.goPackageOption(); ok && impPath != "" {
+		// Replace the existing dirname with the declared import path.
+		_, name = path.Split(name)
+		name = path.Join(impPath, name)
+		return name
+	}
+
+	return name
 }
 
 func (d *FileDescriptor) addExport(obj Object, sym symbol) {
@@ -553,7 +596,7 @@ type Generator struct {
 	Param             map[string]string // Command-line parameters.
 	PackageImportPath string            // Go import path of the package we're generating code for
 	ImportPrefix      string            // String to prefix to imported package file names.
-	ImportMap         map[string]string // Mapping from import name to generated name
+	ImportMap         map[string]string // Mapping from .proto file name to import path
 
 	Pkg map[string]string // The names under which we import support packages
 
@@ -828,9 +871,9 @@ AllFiles:
 // and FileDescriptorProtos into file-referenced objects within the Generator.
 // It also creates the list of files to generate and so should be called before GenerateAllFiles.
 func (g *Generator) WrapTypes() {
-	g.allFiles = make([]*FileDescriptor, len(g.Request.ProtoFile))
+	g.allFiles = make([]*FileDescriptor, 0, len(g.Request.ProtoFile))
 	g.allFilesByName = make(map[string]*FileDescriptor, len(g.allFiles))
-	for i, f := range g.Request.ProtoFile {
+	for _, f := range g.Request.ProtoFile {
 		// We must wrap the descriptors before we wrap the enums
 		descs := wrapDescriptors(f)
 		g.buildNestedDescriptors(descs)
@@ -846,22 +889,22 @@ func (g *Generator) WrapTypes() {
 			proto3:              fileIsProto3(f),
 		}
 		extractComments(fd)
-		g.allFiles[i] = fd
+		g.allFiles = append(g.allFiles, fd)
 		g.allFilesByName[f.GetName()] = fd
 	}
 	for _, fd := range g.allFiles {
 		fd.imp = wrapImported(fd.FileDescriptorProto, g)
 	}
 
-	g.genFiles = make([]*FileDescriptor, len(g.Request.FileToGenerate))
-	for i, fileName := range g.Request.FileToGenerate {
-		g.genFiles[i] = g.allFilesByName[fileName]
-		if g.genFiles[i] == nil {
+	g.genFiles = make([]*FileDescriptor, 0, len(g.Request.FileToGenerate))
+	for _, fileName := range g.Request.FileToGenerate {
+		fd := g.allFilesByName[fileName]
+		if fd == nil {
 			g.Fail("could not find file named", fileName)
 		}
-		g.genFiles[i].index = i
+		fd.index = len(g.genFiles)
+		g.genFiles = append(g.genFiles, fd)
 	}
-	g.Response.File = make([]*plugin.CodeGeneratorResponse_File, len(g.genFiles))
 }
 
 // Scan the descriptors in this file.  For each one, build the slice of nested descriptors
@@ -925,9 +968,8 @@ func newDescriptor(desc *descriptor.DescriptorProto, parent *Descriptor, file *d
 		}
 	}
 
-	d.ext = make([]*ExtensionDescriptor, len(desc.Extension))
-	for i, field := range desc.Extension {
-		d.ext[i] = &ExtensionDescriptor{common{file}, field, d}
+	for _, field := range desc.Extension {
+		d.ext = append(d.ext, &ExtensionDescriptor{common{file}, field, d})
 	}
 
 	return d
@@ -986,9 +1028,9 @@ func wrapEnumDescriptors(file *descriptor.FileDescriptorProto, descs []*Descript
 
 // Return a slice of all the top-level ExtensionDescriptors defined within this file.
 func wrapExtensions(file *descriptor.FileDescriptorProto) []*ExtensionDescriptor {
-	sl := make([]*ExtensionDescriptor, len(file.Extension))
-	for i, field := range file.Extension {
-		sl[i] = &ExtensionDescriptor{common{file}, field, nil}
+	var sl []*ExtensionDescriptor
+	for _, field := range file.Extension {
+		sl = append(sl, &ExtensionDescriptor{common{file}, field, nil})
 	}
 	return sl
 }
@@ -1166,7 +1208,6 @@ func (g *Generator) GenerateAllFiles() {
 	for _, file := range g.genFiles {
 		genFileMap[file] = true
 	}
-	i := 0
 	for _, file := range g.allFiles {
 		g.Reset()
 		g.writeOutput = genFileMap[file]
@@ -1174,10 +1215,10 @@ func (g *Generator) GenerateAllFiles() {
 		if !g.writeOutput {
 			continue
 		}
-		g.Response.File[i] = new(plugin.CodeGeneratorResponse_File)
-		g.Response.File[i].Name = proto.String(goFileName(*file.Name))
-		g.Response.File[i].Content = proto.String(g.String())
-		i++
+		g.Response.File = append(g.Response.File, &plugin.CodeGeneratorResponse_File{
+			Name:    proto.String(file.goFileName()),
+			Content: proto.String(g.String()),
+		})
 	}
 }
 
@@ -1391,7 +1432,7 @@ func (g *Generator) generateImports() {
 		if fd.PackageName() == g.packageName {
 			continue
 		}
-		filename := goFileName(s)
+		filename := fd.goFileName()
 		// By default, import path is the dirname of the Go filename.
 		importPath := path.Dir(filename)
 		if substitution, ok := g.ImportMap[s]; ok {
@@ -2119,14 +2160,11 @@ func (g *Generator) generateMessage(message *Descriptor) {
 		g.P("func (m *", ccTypeName, ") String() string { return ", g.Pkg["proto"], ".CompactTextString(m) }")
 	}
 	g.P("func (*", ccTypeName, ") ProtoMessage() {}")
-	if !message.group {
-		var indexes []string
-		for m := message; m != nil; m = m.parent {
-			// XXX: skip groups?
-			indexes = append([]string{strconv.Itoa(m.index)}, indexes...)
-		}
-		g.P("func (*", ccTypeName, ") Descriptor() ([]byte, []int) { return ", g.file.VarName(), ", []int{", strings.Join(indexes, ", "), "} }")
+	var indexes []string
+	for m := message; m != nil; m = m.parent {
+		indexes = append([]string{strconv.Itoa(m.index)}, indexes...)
 	}
+	g.P("func (*", ccTypeName, ") Descriptor() ([]byte, []int) { return ", g.file.VarName(), ", []int{", strings.Join(indexes, ", "), "} }")
 
 	// Extension support methods
 	var hasExtensions, isMessageSet bool
@@ -2960,6 +2998,7 @@ func (g *Generator) generateFileDescriptor(file *FileDescriptor) {
 
 	v := file.VarName()
 	g.P()
+	g.P("func init() { ", g.Pkg["proto"], ".RegisterFile(", strconv.Quote(*file.Name), ", ", v, ") }")
 	g.P("var ", v, " = []byte{")
 	g.In()
 	g.P("// ", len(b), " bytes of a gzipped FileDescriptorProto")
@@ -3063,15 +3102,6 @@ func CamelCaseSlice(elem []string) string { return CamelCase(strings.Join(elem, 
 
 // dottedSlice turns a sliced name into a dotted name.
 func dottedSlice(elem []string) string { return strings.Join(elem, ".") }
-
-// Given a .proto file name, return the output name for the generated Go program.
-func goFileName(name string) string {
-	ext := path.Ext(name)
-	if ext == ".proto" || ext == ".protodevel" {
-		name = name[0 : len(name)-len(ext)]
-	}
-	return name + ".pb.go"
-}
 
 // Is this field optional?
 func isOptional(field *descriptor.FieldDescriptorProto) bool {

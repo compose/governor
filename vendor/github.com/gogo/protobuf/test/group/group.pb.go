@@ -54,8 +54,9 @@ type Groups1_G struct {
 	XXX_unrecognized []byte   `json:"-"`
 }
 
-func (m *Groups1_G) Reset()      { *m = Groups1_G{} }
-func (*Groups1_G) ProtoMessage() {}
+func (m *Groups1_G) Reset()                    { *m = Groups1_G{} }
+func (*Groups1_G) ProtoMessage()               {}
+func (*Groups1_G) Descriptor() ([]byte, []int) { return fileDescriptorGroup, []int{0, 0} }
 
 type Groups2 struct {
 	G                *Groups2_G `protobuf:"group,1,opt,name=G,json=g" json:"g,omitempty"`
@@ -72,8 +73,9 @@ type Groups2_G struct {
 	XXX_unrecognized []byte    `json:"-"`
 }
 
-func (m *Groups2_G) Reset()      { *m = Groups2_G{} }
-func (*Groups2_G) ProtoMessage() {}
+func (m *Groups2_G) Reset()                    { *m = Groups2_G{} }
+func (*Groups2_G) ProtoMessage()               {}
+func (*Groups2_G) Descriptor() ([]byte, []int) { return fileDescriptorGroup, []int{1, 0} }
 
 func init() {
 	proto.RegisterType((*Groups1)(nil), "group.Groups1")
@@ -945,6 +947,8 @@ func valueToStringGroup(v interface{}) string {
 	pv := reflect.Indirect(rv).Interface()
 	return fmt.Sprintf("*%v", pv)
 }
+
+func init() { proto.RegisterFile("group.proto", fileDescriptorGroup) }
 
 var fileDescriptorGroup = []byte{
 	// 195 bytes of a gzipped FileDescriptorProto
