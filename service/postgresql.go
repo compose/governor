@@ -386,7 +386,19 @@ func (p *postgresql) Start() error {
 		return errors.Wrap(err, "Error removing PID file")
 	}
 
-	return errors.Wrap(p.start(), "Error starting PG")
+	log.WithFields(log.Fields{
+		"package": "postgresql",
+	}).Info("Starting Postgresql")
+
+	if err := p.start(); err != nil {
+		return errors.Wrap(err, "Error starting PG")
+	}
+
+	log.WithFields(log.Fields{
+		"package": "postgresql",
+	}).Info("Successfully started Postgresql")
+
+	return nil
 }
 
 func (p *postgresql) start() error {
@@ -408,10 +420,6 @@ func (p *postgresql) start() error {
 	cmd := exec.Command("pg_ctl",
 		argFields...,
 	)
-
-	log.WithFields(log.Fields{
-		"package": "postgresql",
-	}).Info("Starting Postgresql")
 
 	var runtimeErrs bytes.Buffer
 	cmd.Stderr = &runtimeErrs
@@ -447,7 +455,18 @@ func (p *postgresql) Stop() error {
 		}
 	}
 
-	return errors.Wrap(p.stop(), "Error stopping PG")
+	log.WithFields(log.Fields{
+		"package": "postgresql",
+	}).Info("Stopping Postgresql")
+
+	if err := p.stop(); err != nil {
+		return errors.Wrap(err, "Error stopping PG")
+	}
+
+	log.WithFields(log.Fields{
+		"package": "postgresql",
+	}).Info("Successfully stopped Postgresql")
+	return nil
 }
 
 func (p *postgresql) stop() error {
@@ -480,8 +499,19 @@ func (p *postgresql) Restart() error {
 		fmt.Sprintf("-D %s", p.dataDir),
 		"-m fast",
 	)
+	log.WithFields(log.Fields{
+		"package": "postgresql",
+	}).Info("Restarting Postgresql")
 
-	return errors.Wrap(cmd.Run(), "Error running pg_ctl restart command")
+	if err := cmd.Run(); err != nil {
+		return errors.Wrap(err, "Error running pg_ctl restart command")
+	}
+
+	log.WithFields(log.Fields{
+		"package": "postgresql",
+	}).Info("Successfully restarted Postgresql")
+
+	return nil
 }
 
 func (p *postgresql) IsHealthy() bool {
@@ -497,9 +527,17 @@ func (p *postgresql) Promote() error {
 	p.atomicLock.Lock()
 	defer p.atomicLock.Unlock()
 
+	log.WithFields(log.Fields{
+		"package": "postgresql",
+	}).Info("Promoting Postgresql")
+
 	if err := p.promote(); err != nil {
 		return errors.Wrap(err, "Error promiting node")
 	}
+
+	log.WithFields(log.Fields{
+		"package": "postgresql",
+	}).Info("Successfully promoted Postgresql")
 
 	return nil
 }
@@ -521,6 +559,10 @@ func (p *postgresql) Demote(leader fsm.Leader) error {
 	p.atomicLock.Lock()
 	defer p.atomicLock.Unlock()
 
+	log.WithFields(log.Fields{
+		"package": "postgresql",
+	}).Info("Demoting Postgresql")
+
 	if err := p.writeRecoveryConf(leader); err != nil {
 		return errors.Wrap(err, "Error writing recovery conf")
 	}
@@ -529,6 +571,10 @@ func (p *postgresql) Demote(leader fsm.Leader) error {
 			return errors.Wrap(err, "Error restarting PG")
 		}
 	}
+
+	log.WithFields(log.Fields{
+		"package": "postgresql",
+	}).Info("Successfully demoted Postgresql")
 
 	return nil
 }
