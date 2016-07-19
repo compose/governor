@@ -143,8 +143,6 @@ func (f *fsm) applyDeleteStaleLeader(cmdData []byte) error {
 			case f.leaderc <- update:
 			default:
 			}
-		} else if cmd.Time < f.leader.Time {
-			return ErrorBadTTLTimestamp
 		}
 	}
 
@@ -421,8 +419,6 @@ func (f *fsm) applyDeleteStaleMembers(cmdData []byte) error {
 
 			delete(f.members, id)
 
-		} else if cmd.Time < f.leader.Time {
-			return ErrorBadTTLTimestamp
 		}
 	}
 
