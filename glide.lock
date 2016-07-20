@@ -1,5 +1,5 @@
 hash: de8f5ccd4b5a448a8a9afab2d55f471d1ee97636d7ac84a710401e929c7a85b2
-updated: 2016-07-19T15:50:14.121352623-07:00
+updated: 2016-07-20T16:02:57.016333901-07:00
 imports:
 - name: github.com/beorn7/perks
   version: 3ac7bf7a47d159a033b107610db8a1b6575507a4
@@ -8,7 +8,7 @@ imports:
 - name: github.com/cenk/backoff
   version: 32cd0c5b3aef12c76ed64aaf678f6c79736be7dc
 - name: github.com/compose/canoe
-  version: 097e1e09a63ee3e31fae52fd1c6db3adaacbcca5
+  version: 911a6b6979051ffd1e04c2eec72e51cfbcbe4cea
 - name: github.com/coreos/etcd
   version: 24a90baff8dd153a8481876fb27db64d7ec7e3c7
   subpackages:
@@ -35,7 +35,7 @@ imports:
   subpackages:
   - semver
 - name: github.com/coreos/go-systemd
-  version: d4039021cfc2d0ea21d34afda21631314e83f75a
+  version: d6c05a1dcbb5ac02b7653da4d99e5db340c20778
   subpackages:
   - journal
 - name: github.com/coreos/pkg
@@ -73,7 +73,7 @@ imports:
   subpackages:
   - go
 - name: github.com/prometheus/common
-  version: 4402f4e5ea79ec15f3c574773b6a5198fbea215f
+  version: 610701b0cb96fe82d0166b8e07979b174b6f06ae
   subpackages:
   - expfmt
   - internal/bitbucket.org/ww/goautoneg
@@ -87,7 +87,7 @@ imports:
 - name: github.com/xiang90/probing
   version: 6a0cc1ae81b4cc11db5e491e030e4b98fba79c19
 - name: golang.org/x/net
-  version: 3797cd8864994d713d909eda5e61ede8683fdc12
+  version: 4d38db76854b199960801a1734443fd02870d7e1
   subpackages:
   - context
 - name: golang.org/x/sys

@@ -8,10 +8,10 @@ import (
 	"github.com/coreos/etcd/raft/raftpb"
 	"github.com/gorilla/mux"
 	"github.com/pkg/errors"
+	"net"
 	"net/http"
 	"net/url"
 	"strconv"
-	"strings"
 )
 
 var peerEndpoint = "/peers"
@@ -135,7 +135,7 @@ func (rn *Node) handlePeerAddRequest(w http.ResponseWriter, req *http.Request) {
 		}
 
 		confContext := confChangeNodeContext{
-			IP:       strings.Split(req.RemoteAddr, ":")[0],
+			IP:       net.SplitHostPort(req.RemoteAddr, ":")[0],
 			RaftPort: addReq.RaftPort,
 			APIPort:  addReq.APIPort,
 		}
@@ -222,13 +222,13 @@ func (rn *Node) addPeersFromRemote(remotePeer string, remoteMemberResponse *http
 		return errors.Wrap(err, "Error parsing remote peer string for URL")
 	}
 	addURL := fmt.Sprintf("http://%s:%s",
-		strings.Split(peerURL.Host, ":")[0],
+		net.SplitHostPort(peerURL.Host, ":")[0],
 		strconv.Itoa(remoteMemberResponse.RaftPort))
 
 	rn.transport.AddPeer(types.ID(remoteMemberResponse.ID), []string{addURL})
 	rn.logger.Infof("Adding peer from HTTP request: %x\n", remoteMemberResponse.ID)
 	rn.peerMap[remoteMemberResponse.ID] = confChangeNodeContext{
-		IP:       strings.Split(peerURL.Host, ":")[0],
+		IP:       net.SplitHostPort(peerURL.Host, ":")[0],
 		RaftPort: remoteMemberResponse.RaftPort,
 		APIPort:  remoteMemberResponse.APIPort,
 	}
