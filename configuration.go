@@ -39,7 +39,7 @@ func LoadConfiguration(path string) (Configuration, error) {
 
 func (c *Configuration) validate() error {
 	if c.LoopWait*2 > c.FSM.MemberTTL {
-		return errors.New("LeaderTTL should be at least 2x the loop wait.")
+		return errors.New("MemberTTL should be at least 2x the loop wait.")
 	}
 	if c.LoopWait*2 > c.FSM.LeaderTTL {
 		return errors.New("LeaderTTL should be at least 2x the loop wait.")
