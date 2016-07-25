@@ -12,14 +12,16 @@ import (
 	"time"
 )
 
-var configuration_file = flag.String("config", "./postgresql0.yml", "the yaml based configuration file.")
+var configurationFile = flag.String("config", "./postgresql0.yml", "the yaml based configuration file.")
 
 func main() {
+	flag.Parse()
 
 	log.WithFields(log.Fields{
 		"package": "governor",
 	}).Infof("Loading configuration")
-	configuration, err := LoadConfiguration("postgres0.yml")
+	configuration, err := LoadConfiguration(*configurationFile)
+
 	if err != nil {
 		log.Fatalf("Error loading governor configuration: %+v", err)
 	}
@@ -35,7 +37,7 @@ func main() {
 
 	log.WithFields(log.Fields{
 		"package": "governor",
-	}).Infof("Configuration Loaded")
+	}).Infof("Configuration Loaded: %v", configuration)
 
 	pg, err := service.NewPostgresql(configuration.Postgresql)
 	if err != nil {
