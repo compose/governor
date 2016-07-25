@@ -196,9 +196,14 @@ func (ha *SingleLeaderHA) RunCycle() error {
 			return err
 		}
 		if isLeader {
+			log.Infof("Running as leader")
 			if err := ha.fsm.RefreshLeader(); err != nil {
 				return err
 			}
+		} else {
+			log.WithFields(log.Fields{
+				"package": "ha",
+			}).Infof("PG Running as follower")
 		}
 	} else if !ha.service.IsRunning() {
 		if err := ha.service.Start(); err != nil {
