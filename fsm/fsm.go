@@ -366,6 +366,10 @@ type fsmSnapshot struct {
 }
 
 func (f *fsm) Restore(data canoe.SnapshotData) error {
+	log.WithFields(log.Fields{
+		"package": "fsm",
+	}).Info("Restoring from Snapshot")
+
 	var fsmSnap fsmSnapshot
 
 	if err := json.Unmarshal(data, &fsmSnap); err != nil {
@@ -383,6 +387,9 @@ func (f *fsm) Restore(data canoe.SnapshotData) error {
 }
 
 func (f *fsm) Snapshot() (canoe.SnapshotData, error) {
+	log.WithFields(log.Fields{
+		"package": "fsm",
+	}).Info("Creating Snapshot")
 	f.Lock()
 	defer f.Unlock()
 	retData, err := json.Marshal(&fsmSnapshot{
