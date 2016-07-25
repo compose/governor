@@ -17,7 +17,7 @@ var deleteStaleLeaderOp = "DELETE_STALE_LEADER"
 var setMemberOp = "SET_MEMBER"
 var refreshMemberOp = "REFRESH_MEMBER"
 var deleteMemberOp = "DELETE_MEMBER"
-var deleteStaleMembersOp = "DELETE_STALE_MEMBER"
+var deleteStaleMembersOp = "DELETE_STALE_MEMBERS"
 
 var newNodeUpToDateOp = "NEW_NODE_UP_TO_DATE"
 
@@ -467,7 +467,7 @@ func (f *fsm) applyDeleteStaleMembers(cmdData []byte) error {
 	return nil
 }
 
-func (f *fsm) proposeDeleteStaleMember() error {
+func (f *fsm) proposeDeleteStaleMembers() error {
 	req := &deleteStaleMembersCmd{
 		Time: time.Now().UnixNano(),
 	}
@@ -532,7 +532,6 @@ func (f *fsm) applyRaceForInit(cmdData []byte) error {
 		f.gotInit <- true
 	} else {
 		f.initID = &cmd.ID
-		f.gotInit <- false
 	}
 
 	return nil
