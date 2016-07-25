@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/pkg/errors"
 	"golang.org/x/net/context"
+	"net"
 	"strconv"
 	"sync"
 	"time"
@@ -636,7 +637,7 @@ func (rn *Node) restoreFSMFromSnapshot(raftSnap raftpb.Snapshot) error {
 	}
 
 	for id, info := range snapStruct.Metadata.Peers {
-		raftURL := fmt.Sprintf("http://%s:%d", info.IP, info.RaftPort)
+		raftURL := fmt.Sprintf("http://%s", net.JoinHostPort(info.IP, strconv.Itoa(info.RaftPort)))
 		rn.transport.AddPeer(types.ID(id), []string{raftURL})
 	}
 
@@ -810,7 +811,7 @@ func (rn *Node) publishEntries(ents []raftpb.Entry) error {
 						return errors.Wrap(err, "Error unmarshalling add node request")
 					}
 
-					raftURL := fmt.Sprintf("http://%s:%d", ctxData.IP, ctxData.RaftPort)
+					raftURL := fmt.Sprintf("http://%s", net.JoinHostPort(ctxData.IP, strconv.Itoa(ctxData.RaftPort)))
 
 					if cc.NodeID != rn.id {
 						rn.transport.AddPeer(types.ID(cc.NodeID), []string{raftURL})

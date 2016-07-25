@@ -1,5 +1,5 @@
 hash: de8f5ccd4b5a448a8a9afab2d55f471d1ee97636d7ac84a710401e929c7a85b2
-updated: 2016-07-20T16:02:57.016333901-07:00
+updated: 2016-07-25T13:56:46.335603658-07:00
 imports:
 - name: github.com/beorn7/perks
   version: 3ac7bf7a47d159a033b107610db8a1b6575507a4
@@ -8,7 +8,7 @@ imports:
 - name: github.com/cenk/backoff
   version: 32cd0c5b3aef12c76ed64aaf678f6c79736be7dc
 - name: github.com/compose/canoe
-  version: 911a6b6979051ffd1e04c2eec72e51cfbcbe4cea
+  version: 8e78f11634324a908c1430cd0d324f4be07b116c
 - name: github.com/coreos/etcd
   version: 24a90baff8dd153a8481876fb27db64d7ec7e3c7
   subpackages:
@@ -43,7 +43,7 @@ imports:
   subpackages:
   - capnslog
 - name: github.com/gogo/protobuf
-  version: e57a569e1882958f6b188cb42231d6db87701f2a
+  version: 6abcf94fd4c97dcb423fdafd42fe9f96ca7e421b
   subpackages:
   - proto
 - name: github.com/golang/protobuf
@@ -63,7 +63,7 @@ imports:
   subpackages:
   - pbutil
 - name: github.com/pkg/errors
-  version: cc5fbb72d9b1b5f664ff3c11ed7896ee23ad9276
+  version: 1d2e60385a13aaa66134984235061c2f9302520e
 - name: github.com/prometheus/client_golang
   version: 28be15864ef9ba05d74fa6fd13b928fd250e8f01
   subpackages:
