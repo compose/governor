@@ -192,6 +192,9 @@ func (f *fsm) run() error {
 			if err := f.proposeDeleteStaleLeader(); err != nil {
 				return errors.Wrap(err, "Error proposing delete stale leader")
 			}
+			if err := f.proposeDeleteStaleMembers(); err != nil {
+				return errors.Wrap(err, "Error proposing delete stale leader")
+			}
 		}
 	}
 	return nil
