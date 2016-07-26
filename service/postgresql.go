@@ -719,26 +719,33 @@ func (p *postgresql) writeRecoveryConf(leader fsm.Leader) error {
 		return errors.Wrap(err, "Error opening recovery.conf")
 	}
 
-	conf.WriteString(fmt.Sprintf(
+	_, err = conf.WriteString(fmt.Sprintf(
 		"standby_mode = 'on'\n"+
 			"primary_slot_name = '%s'\n"+
 			"recovery_target_timeline = 'latest'\n",
 		p.name,
 	))
+
+	if err != nil {
+		return errors.Wrap(err, "Error writing string to recovery conf")
+	}
+
 	if leader != nil {
 		parsedLead, err := url.Parse(leader.(*clusterMember).ConnectionString)
 		if err != nil {
 			return errors.Wrap(err, "Error parsing PG connection string")
 		}
 		pass, _ := parsedLead.User.Password()
-		// TODO: Add error
-		conf.WriteString(fmt.Sprintf(
+		_, err = conf.WriteString(fmt.Sprintf(
 			"primary_conninfo = 'user=%s password=%s host=%s port=%s sslmode=prefer sslcompression=1'",
 			parsedLead.User.Username(),
 			pass,
 			strings.Split(parsedLead.Host, ":")[0],
 			strings.Split(parsedLead.Host, ":")[1],
 		))
+		if err != nil {
+			return errors.Wrap(err, "Error writing string to recovery conf")
+		}
 		//TODO: Parse recovery conf
 
 	}
