@@ -65,13 +65,23 @@ func (ha *SingleLeaderHA) init() error {
 	// then manual intervention MUST happen and the node should alert
 	// like crazy
 	if ha.service.NeedsInitialization() {
+		log.WithFields(log.Fields{
+			"package": "ha",
+		}).Info("Service needs initialization")
 
+		log.WithFields(log.Fields{
+			"package": "ha",
+		}).Info("Racing for initialization")
 		hasInit, err := ha.raceRetryForInit(eb)
 		if err != nil {
 			return err
 		}
 
 		if hasInit {
+			log.WithFields(log.Fields{
+				"package": "ha",
+			}).Info("Won initialization race")
+
 			if err := ha.service.Initialize(); err != nil {
 				return err
 			}
@@ -88,11 +98,22 @@ func (ha *SingleLeaderHA) init() error {
 				return err
 			}
 		} else {
+			log.WithFields(log.Fields{
+				"package": "ha",
+			}).Info("Lost initialization race")
+
 			eb.Reset()
+
+			log.WithFields(log.Fields{
+				"package": "ha",
+			}).Info("Waiting for leader in FSM")
 			leader, err := ha.waitForLeader(eb)
 			if err != nil {
 				return err
 			}
+			log.WithFields(log.Fields{
+				"package": "ha",
+			}).Info("Found leader in FSM")
 
 			// Let the service determine if syncing should be seperate
 			if err := ha.service.FollowTheLeader(leader); err != nil {
