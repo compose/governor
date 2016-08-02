@@ -12,19 +12,26 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package etcdmain
+/*
+Package embed provides bindings for embedding an etcd server in a program.
 
-import (
-	"path"
+Launch an embedded etcd server using the configuration defaults:
 
-	"github.com/coreos/etcd/wal"
-)
+	import (
+		"log"
 
-func isMemberInitialized(cfg *config) bool {
-	waldir := cfg.WalDir
-	if waldir == "" {
-		waldir = path.Join(cfg.Dir, "member", "wal")
+		"github.com/coreos/etcd/embed"
+	)
+
+	func main() {
+		cfg := embed.NewConfig()
+		cfg.Dir = "default.etcd"
+		e, err := embed.StartEtcd(cfg)
+		if err != nil {
+			log.Fatal(err)
+		}
+		defer e.Close()
+		log.Fatal(<-e.Err())
 	}
-
-	return wal.Exist(waldir)
-}
+*/
+package embed

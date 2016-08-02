@@ -5,11 +5,11 @@ import (
 	"fmt"
 	"github.com/compose/canoe"
 	"math/rand"
-	_ "os"
-	_ "os/signal"
+	"os"
+	"os/signal"
 	"strconv"
 	"strings"
-	_ "syscall"
+	"syscall"
 	"time"
 )
 
@@ -45,13 +45,13 @@ func main() {
 	}
 	kv.raft = raft
 
-	/*sigc := make(chan os.Signal, 1)
+	sigc := make(chan os.Signal, 1)
 	signal.Notify(sigc, syscall.SIGINT)
 	go func() {
 		_ = <-sigc
 		raft.Stop()
 		os.Exit(0)
-	}()*/
+	}()
 
 	if err := raft.Start(); err != nil {
 		panic(err)

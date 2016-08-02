@@ -1,6 +1,6 @@
 {
 	"ImportPath": "github.com/coreos/etcd",
-	"GoVersion": "go1.6",
+	"GoVersion": "devel-a6dbfc1",
 	"GodepVersion": "v74",
 	"Packages": [
 		"./..."
@@ -38,18 +38,18 @@
 		},
 		{
 			"ImportPath": "github.com/coreos/go-systemd/daemon",
-			"Comment": "v3-6-gcea488b",
-			"Rev": "cea488b4e6855fee89b6c22a811e3c5baca861b6"
+			"Comment": "v10-13-gd6c05a1d",
+			"Rev": "d6c05a1dcbb5ac02b7653da4d99e5db340c20778"
 		},
 		{
 			"ImportPath": "github.com/coreos/go-systemd/journal",
-			"Comment": "v3-6-gcea488b",
-			"Rev": "cea488b4e6855fee89b6c22a811e3c5baca861b6"
+			"Comment": "v10-13-gd6c05a1d",
+			"Rev": "d6c05a1dcbb5ac02b7653da4d99e5db340c20778"
 		},
 		{
 			"ImportPath": "github.com/coreos/go-systemd/util",
-			"Comment": "v3-6-gcea488b",
-			"Rev": "cea488b4e6855fee89b6c22a811e3c5baca861b6"
+			"Comment": "v10-13-gd6c05a1d",
+			"Rev": "d6c05a1dcbb5ac02b7653da4d99e5db340c20778"
 		},
 		{
 			"ImportPath": "github.com/coreos/pkg/capnslog",
@@ -66,25 +66,13 @@
 			"Rev": "8929fe90cee4b2cb9deb468b51fb34eba64d1bf0"
 		},
 		{
-			"ImportPath": "github.com/gengo/grpc-gateway/runtime",
-			"Rev": "dcb844349dc5d2cb0300fdc4d2d374839d0d2e13"
-		},
-		{
-			"ImportPath": "github.com/gengo/grpc-gateway/runtime/internal",
-			"Rev": "dcb844349dc5d2cb0300fdc4d2d374839d0d2e13"
-		},
-		{
-			"ImportPath": "github.com/gengo/grpc-gateway/utilities",
-			"Rev": "dcb844349dc5d2cb0300fdc4d2d374839d0d2e13"
-		},
-		{
 			"ImportPath": "github.com/ghodss/yaml",
 			"Rev": "73d445a93680fa1a78ae23a5839bad48f32ba1ee"
 		},
 		{
 			"ImportPath": "github.com/gogo/protobuf/proto",
-			"Comment": "v0.2-13-gc3995ae",
-			"Rev": "c3995ae437bb78d1189f4f147dfe5f87ad3596e4"
+			"Comment": "v0.2-33-ge18d7aa",
+			"Rev": "e18d7aa8f8c624c915db340349aad4c49b10d173"
 		},
 		{
 			"ImportPath": "github.com/golang/glog",
@@ -105,6 +93,21 @@
 		{
 			"ImportPath": "github.com/google/btree",
 			"Rev": "7d79101e329e5a3adf994758c578dab82b90c017"
+		},
+		{
+			"ImportPath": "github.com/grpc-ecosystem/grpc-gateway/runtime",
+			"Comment": "v1.0.0-8-gf52d055",
+			"Rev": "f52d055dc48aec25854ed7d31862f78913cf17d1"
+		},
+		{
+			"ImportPath": "github.com/grpc-ecosystem/grpc-gateway/runtime/internal",
+			"Comment": "v1.0.0-8-gf52d055",
+			"Rev": "f52d055dc48aec25854ed7d31862f78913cf17d1"
+		},
+		{
+			"ImportPath": "github.com/grpc-ecosystem/grpc-gateway/utilities",
+			"Comment": "v1.0.0-8-gf52d055",
+			"Rev": "f52d055dc48aec25854ed7d31862f78913cf17d1"
 		},
 		{
 			"ImportPath": "github.com/inconshreveable/mousetrap",
@@ -194,7 +197,7 @@
 		},
 		{
 			"ImportPath": "github.com/xiang90/probing",
-			"Rev": "6a0cc1ae81b4cc11db5e491e030e4b98fba79c19"
+			"Rev": "95bd620af35406ab93d7f5bf320dba4b4667982e"
 		},
 		{
 			"ImportPath": "golang.org/x/crypto/bcrypt",

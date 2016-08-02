@@ -85,6 +85,10 @@ func NewKV(c *Client) KV {
 	return &kv{remote: pb.NewKVClient(c.conn)}
 }
 
+func NewKVFromKVClient(remote pb.KVClient) KV {
+	return &kv{remote: remote}
+}
+
 func (kv *kv) Put(ctx context.Context, key, val string, opts ...OpOption) (*PutResponse, error) {
 	r, err := kv.Do(ctx, OpPut(key, val, opts...))
 	return r.put, toErr(ctx, err)
@@ -157,14 +161,14 @@ func (kv *kv) do(ctx context.Context, op Op) (OpResponse, error) {
 		}
 	case tPut:
 		var resp *pb.PutResponse
-		r := &pb.PutRequest{Key: op.key, Value: op.val, Lease: int64(op.leaseID)}
+		r := &pb.PutRequest{Key: op.key, Value: op.val, Lease: int64(op.leaseID), PrevKv: op.prevKV}
 		resp, err = kv.remote.Put(ctx, r, grpc.FailFast(false))
 		if err == nil {
 			return OpResponse{put: (*PutResponse)(resp)}, nil
 		}
 	case tDeleteRange:
 		var resp *pb.DeleteRangeResponse
-		r := &pb.DeleteRangeRequest{Key: op.key, RangeEnd: op.end}
+		r := &pb.DeleteRangeRequest{Key: op.key, RangeEnd: op.end, PrevKv: op.prevKV}
 		resp, err = kv.remote.DeleteRange(ctx, r, grpc.FailFast(false))
 		if err == nil {
 			return OpResponse{del: (*DeleteResponse)(resp)}, nil

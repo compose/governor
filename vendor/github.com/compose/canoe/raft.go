@@ -285,12 +285,16 @@ func (rn *Node) IsRunning() bool {
 //
 // Note: stopping will not remove this node from the cluster. This means that it will affect consensus and quorum
 func (rn *Node) Stop() error {
+	rn.logger.Info("Stopping raft")
 	close(rn.stopc)
+
+	rn.logger.Info("Stopping raft transporter")
 	rn.transport.Stop()
 	// TODO: Don't poll stuff here
 	for rn.running {
 		time.Sleep(200 * time.Millisecond)
 	}
+	rn.logger.Info("Raft has stopped")
 	rn.started = false
 	rn.initialized = false
 	return nil
@@ -571,7 +575,10 @@ func (rn *Node) isHealthy() bool {
 }
 
 func (rn *Node) scanReady() error {
-	defer rn.wal.Close()
+	defer func() {
+		rn.logger.Info("Closed WAL")
+		rn.wal.Close()
+	}()
 	defer func(rn *Node) {
 		rn.running = false
 	}(rn)

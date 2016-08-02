@@ -15,6 +15,7 @@
 package raft
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"math"
@@ -35,6 +36,19 @@ const (
 	StateCandidate
 	StateLeader
 )
+
+// Possible values for CampaignType
+const (
+	// campaignElection represents the type of normal election
+	campaignElection CampaignType = "CampaignElection"
+	// campaignTransfer represents the type of leader transfer
+	campaignTransfer CampaignType = "CampaignTransfer"
+)
+
+// CampaignType represents the type of campaigning
+// the reason we use the type of string instead of uint64
+// is because it's simpler to compare and fill in raft entries
+type CampaignType string
 
 // StateType represents the role of a node in a cluster.
 type StateType uint64
@@ -133,11 +147,23 @@ func (c *Config) validate() error {
 	return nil
 }
 
+// ReadState provides state for read only query.
+// It's caller's responsibility to send MsgReadIndex first before getting
+// this state from ready, It's also caller's duty to differentiate if this
+// state is what it requests through RequestCtx, eg. given a unique id as
+// RequestCtx
+type ReadState struct {
+	Index      uint64
+	RequestCtx []byte
+}
+
 type raft struct {
 	id uint64
 
 	Term uint64
 	Vote uint64
+
+	readState ReadState
 
 	// the log
 	raftLog *raftLog
@@ -208,6 +234,7 @@ func newRaft(c *Config) *raft {
 	r := &raft{
 		id:               c.ID,
 		lead:             None,
+		readState:        ReadState{Index: None, RequestCtx: nil},
 		raftLog:          raftlog,
 		maxMsgSize:       c.MaxSizePerMsg,
 		maxInflight:      c.MaxInflightMsgs,
@@ -494,20 +521,19 @@ func (r *raft) becomeLeader() {
 		r.logger.Panicf("unexpected error getting uncommitted entries (%v)", err)
 	}
 
-	for _, e := range ents {
-		if e.Type != pb.EntryConfChange {
-			continue
-		}
-		if r.pendingConf {
-			panic("unexpected double uncommitted config entry")
-		}
+	nconf := numOfPendingConf(ents)
+	if nconf > 1 {
+		panic("unexpected multiple uncommitted config entry")
+	}
+	if nconf == 1 {
 		r.pendingConf = true
 	}
+
 	r.appendEntry(pb.Entry{Data: nil})
 	r.logger.Infof("%x became leader at term %d", r.id, r.Term)
 }
 
-func (r *raft) campaign() {
+func (r *raft) campaign(t CampaignType) {
 	r.becomeCandidate()
 	if r.quorum() == r.poll(r.id, true) {
 		r.becomeLeader()
@@ -519,7 +545,12 @@ func (r *raft) campaign() {
 		}
 		r.logger.Infof("%x [logterm: %d, index: %d] sent vote request to %x at term %d",
 			r.id, r.raftLog.lastTerm(), r.raftLog.lastIndex(), id, r.Term)
-		r.send(pb.Message{To: id, Type: pb.MsgVote, Index: r.raftLog.lastIndex(), LogTerm: r.raftLog.lastTerm()})
+
+		var ctx []byte
+		if t == campaignTransfer {
+			ctx = []byte(t)
+		}
+		r.send(pb.Message{To: id, Type: pb.MsgVote, Index: r.raftLog.lastIndex(), LogTerm: r.raftLog.lastTerm(), Context: ctx})
 	}
 }
 
@@ -543,8 +574,17 @@ func (r *raft) poll(id uint64, v bool) (granted int) {
 func (r *raft) Step(m pb.Message) error {
 	if m.Type == pb.MsgHup {
 		if r.state != StateLeader {
+			ents, err := r.raftLog.entries(r.raftLog.applied+1, r.raftLog.committed-r.raftLog.applied)
+			if err != nil {
+				r.logger.Panicf("unexpected error getting uncommitted entries (%v)", err)
+			}
+			if n := numOfPendingConf(ents); n != 0 && r.raftLog.committed > r.raftLog.applied {
+				r.logger.Warningf("%x cannot campaign at term %d since there are still %d pending configuration changes to apply", r.id, r.Term, n)
+				return nil
+			}
+
 			r.logger.Infof("%x is starting a new election at term %d", r.id, r.Term)
-			r.campaign()
+			r.campaign(campaignElection)
 		} else {
 			r.logger.Debugf("%x ignoring MsgHup because already leader", r.id)
 		}
@@ -562,7 +602,9 @@ func (r *raft) Step(m pb.Message) error {
 	case m.Term > r.Term:
 		lead := m.From
 		if m.Type == pb.MsgVote {
-			if r.checkQuorum && r.state != StateCandidate && r.electionElapsed < r.electionTimeout {
+			force := bytes.Equal(m.Context, []byte(campaignTransfer))
+			inLease := r.checkQuorum && r.state != StateCandidate && r.electionElapsed < r.electionTimeout
+			if !force && inLease {
 				// If a server receives a RequestVote request within the minimum election timeout
 				// of hearing from a current leader, it does not update its term or grant its vote
 				r.logger.Infof("%x [logterm: %d, index: %d, vote: %x] ignored vote from %x [logterm: %d, index: %d] at term %d: lease is not expired (remaining ticks: %d)",
@@ -641,6 +683,18 @@ func stepLeader(r *raft, m pb.Message) {
 		r.logger.Infof("%x [logterm: %d, index: %d, vote: %x] rejected vote from %x [logterm: %d, index: %d] at term %d",
 			r.id, r.raftLog.lastTerm(), r.raftLog.lastIndex(), r.Vote, m.From, m.LogTerm, m.Index, r.Term)
 		r.send(pb.Message{To: m.From, Type: pb.MsgVoteResp, Reject: true})
+		return
+	case pb.MsgReadIndex:
+		ri := None
+		if r.checkQuorum {
+			ri = r.raftLog.committed
+		}
+		if m.From == None || m.From == r.id { // from local member
+			r.readState.Index = ri
+			r.readState.RequestCtx = m.Entries[0].Data
+		} else {
+			r.send(pb.Message{To: m.From, Type: pb.MsgReadIndexResp, Index: ri, Entries: m.Entries})
+		}
 		return
 	}
 
@@ -806,6 +860,7 @@ func stepFollower(r *raft, m pb.Message) {
 		r.handleHeartbeat(m)
 	case pb.MsgSnap:
 		r.electionElapsed = 0
+		r.lead = m.From
 		r.handleSnapshot(m)
 	case pb.MsgVote:
 		if (r.Vote == None || r.Vote == m.From) && r.raftLog.isUpToDate(m.Index, m.LogTerm) {
@@ -821,7 +876,22 @@ func stepFollower(r *raft, m pb.Message) {
 		}
 	case pb.MsgTimeoutNow:
 		r.logger.Infof("%x [term %d] received MsgTimeoutNow from %x and starts an election to get leadership.", r.id, r.Term, m.From)
-		r.campaign()
+		r.campaign(campaignTransfer)
+	case pb.MsgReadIndex:
+		if r.lead == None {
+			r.logger.Infof("%x no leader at term %d; dropping index reading msg", r.id, r.Term)
+			return
+		}
+		m.To = r.lead
+		r.send(m)
+	case pb.MsgReadIndexResp:
+		if len(m.Entries) != 1 {
+			r.logger.Errorf("%x invalid format of MsgReadIndexResp from %x, entries count: %d", r.id, m.From, len(m.Entries))
+			return
+		}
+
+		r.readState.Index = m.Index
+		r.readState.RequestCtx = m.Entries[0].Data
 	}
 }
 
@@ -877,11 +947,9 @@ func (r *raft) restore(s pb.Snapshot) bool {
 	r.raftLog.restore(s)
 	r.prs = make(map[uint64]*Progress)
 	for _, n := range s.Metadata.ConfState.Nodes {
-		match, next := uint64(0), uint64(r.raftLog.lastIndex())+1
+		match, next := uint64(0), r.raftLog.lastIndex()+1
 		if n == r.id {
 			match = next - 1
-		} else {
-			match = 0
 		}
 		r.setProgress(n, match, next)
 		r.logger.Infof("%x restored progress of %x [%s]", r.id, n, r.prs[n])
@@ -986,4 +1054,14 @@ func (r *raft) sendTimeoutNow(to uint64) {
 
 func (r *raft) abortLeaderTransfer() {
 	r.leadTransferee = None
+}
+
+func numOfPendingConf(ents []pb.Entry) int {
+	n := 0
+	for i := range ents {
+		if ents[i].Type == pb.EntryConfChange {
+			n++
+		}
+	}
+	return n
 }

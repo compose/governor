@@ -14,9 +14,7 @@
 
 package clientv3
 
-import (
-	pb "github.com/coreos/etcd/etcdserver/etcdserverpb"
-)
+import pb "github.com/coreos/etcd/etcdserver/etcdserverpb"
 
 type opType int
 
@@ -47,8 +45,14 @@ type Op struct {
 	// for range, watch
 	rev int64
 
+	// for watch, put, delete
+	prevKV bool
+
 	// progressNotify is for progress updates.
 	progressNotify bool
+	// filters for watchers
+	filterPut    bool
+	filterDelete bool
 
 	// for put
 	val     []byte
@@ -73,10 +77,11 @@ func (op Op) toRequestOp() *pb.RequestOp {
 		}
 		return &pb.RequestOp{Request: &pb.RequestOp_RequestRange{RequestRange: r}}
 	case tPut:
-		r := &pb.PutRequest{Key: op.key, Value: op.val, Lease: int64(op.leaseID)}
+		r := &pb.PutRequest{Key: op.key, Value: op.val, Lease: int64(op.leaseID), PrevKv: op.prevKV}
 		return &pb.RequestOp{Request: &pb.RequestOp_RequestPut{RequestPut: r}}
 	case tDeleteRange:
-		r := &pb.DeleteRangeRequest{Key: op.key, RangeEnd: op.end}
+		r := &pb.DeleteRangeRequest{Key: op.key, RangeEnd: op.end, PrevKv: op.prevKV}
+
 		return &pb.RequestOp{Request: &pb.RequestOp_RequestDeleteRange{RequestDeleteRange: r}}
 	default:
 		panic("Unknown Op")
@@ -109,6 +114,8 @@ func OpDelete(key string, opts ...OpOption) Op {
 		panic("unexpected serializable in delete")
 	case ret.countOnly:
 		panic("unexpected countOnly in delete")
+	case ret.filterDelete, ret.filterPut:
+		panic("unexpected filter in delete")
 	}
 	return ret
 }
@@ -128,7 +135,9 @@ func OpPut(key, val string, opts ...OpOption) Op {
 	case ret.serializable:
 		panic("unexpected serializable in put")
 	case ret.countOnly:
-		panic("unexpected countOnly in delete")
+		panic("unexpected countOnly in put")
+	case ret.filterDelete, ret.filterPut:
+		panic("unexpected filter in put")
 	}
 	return ret
 }
@@ -146,7 +155,7 @@ func opWatch(key string, opts ...OpOption) Op {
 	case ret.serializable:
 		panic("unexpected serializable in watch")
 	case ret.countOnly:
-		panic("unexpected countOnly in delete")
+		panic("unexpected countOnly in watch")
 	}
 	return ret
 }
@@ -269,5 +278,23 @@ func withTop(target SortTarget, order SortOrder) []OpOption {
 func WithProgressNotify() OpOption {
 	return func(op *Op) {
 		op.progressNotify = true
+	}
+}
+
+// WithFilterPut discards PUT events from the watcher.
+func WithFilterPut() OpOption {
+	return func(op *Op) { op.filterPut = true }
+}
+
+// WithFilterDelete discards DELETE events from the watcher.
+func WithFilterDelete() OpOption {
+	return func(op *Op) { op.filterDelete = true }
+}
+
+// WithPrevKV gets the previous key-value pair before the event happens. If the previous KV is already compacted,
+// nothing will be returned.
+func WithPrevKV() OpOption {
+	return func(op *Op) {
+		op.prevKV = true
 	}
 }

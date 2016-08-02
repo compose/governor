@@ -1176,6 +1176,10 @@ func (sc *serverConn) closeStream(st *stream, err error) {
 	}
 	delete(sc.streams, st.id)
 	if p := st.body; p != nil {
+		// Return any buffered unread bytes worth of conn-level flow control.
+		// See golang.org/issue/16481
+		sc.sendWindowUpdate(nil, p.Len())
+
 		p.CloseWithError(err)
 	}
 	st.cw.Close() // signals Handler's CloseNotifier, unblocks writes, etc
@@ -1277,6 +1281,8 @@ func (sc *serverConn) processSettingInitialWindowSize(val uint32) error {
 
 func (sc *serverConn) processData(f *DataFrame) error {
 	sc.serveG.check()
+	data := f.Data()
+
 	// "If a DATA frame is received whose stream is not in "open"
 	// or "half closed (local)" state, the recipient MUST respond
 	// with a stream error (Section 5.4.2) of type STREAM_CLOSED."
@@ -1288,32 +1294,55 @@ func (sc *serverConn) processData(f *DataFrame) error {
 		// the http.Handler returned, so it's done reading &
 		// done writing). Try to stop the client from sending
 		// more DATA.
+
+		// But still enforce their connection-level flow control,
+		// and return any flow control bytes since we're not going
+		// to consume them.
+		if sc.inflow.available() < int32(f.Length) {
+			return StreamError{id, ErrCodeFlowControl}
+		}
+		// Deduct the flow control from inflow, since we're
+		// going to immediately add it back in
+		// sendWindowUpdate, which also schedules sending the
+		// frames.
+		sc.inflow.take(int32(f.Length))
+		sc.sendWindowUpdate(nil, int(f.Length)) // conn-level
+
 		return StreamError{id, ErrCodeStreamClosed}
 	}
 	if st.body == nil {
 		panic("internal error: should have a body in this state")
 	}
-	data := f.Data()
 
 	// Sender sending more than they'd declared?
 	if st.declBodyBytes != -1 && st.bodyBytes+int64(len(data)) > st.declBodyBytes {
 		st.body.CloseWithError(fmt.Errorf("sender tried to send more than declared Content-Length of %d bytes", st.declBodyBytes))
 		return StreamError{id, ErrCodeStreamClosed}
 	}
-	if len(data) > 0 {
+	if f.Length > 0 {
 		// Check whether the client has flow control quota.
-		if int(st.inflow.available()) < len(data) {
+		if st.inflow.available() < int32(f.Length) {
 			return StreamError{id, ErrCodeFlowControl}
 		}
-		st.inflow.take(int32(len(data)))
-		wrote, err := st.body.Write(data)
-		if err != nil {
-			return StreamError{id, ErrCodeStreamClosed}
+		st.inflow.take(int32(f.Length))
+
+		if len(data) > 0 {
+			wrote, err := st.body.Write(data)
+			if err != nil {
+				return StreamError{id, ErrCodeStreamClosed}
+			}
+			if wrote != len(data) {
+				panic("internal error: bad Writer")
+			}
+			st.bodyBytes += int64(len(data))
 		}
-		if wrote != len(data) {
-			panic("internal error: bad Writer")
+
+		// Return any padded flow control now, since we won't
+		// refund it later on body reads.
+		if pad := int32(f.Length) - int32(len(data)); pad > 0 {
+			sc.sendWindowUpdate32(nil, pad)
+			sc.sendWindowUpdate32(st, pad)
 		}
-		st.bodyBytes += int64(len(data))
 	}
 	if f.StreamEnded() {
 		st.endStream()

@@ -11,7 +11,7 @@ matrix:
     - go: tip
 
 install:
-  - go get golang.org/x/tools/cmd/vet
+  - # Skip
 
 script:
   - go get -t -v ./...

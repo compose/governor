@@ -19,6 +19,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/coreos/etcd/auth"
 	pb "github.com/coreos/etcd/etcdserver/etcdserverpb"
 	"github.com/coreos/etcd/lease"
 	"github.com/coreos/etcd/lease/leasehttp"
@@ -36,6 +37,12 @@ const (
 
 	// max timeout for waiting a v3 request to go through raft.
 	maxV3RequestTimeout = 5 * time.Second
+
+	// In the health case, there might be a small gap (10s of entries) between
+	// the applied index and commited index.
+	// However, if the committed entries are very heavy to apply, the gap might grow.
+	// We should stop accepting new proposals if the gap growing to a certain point.
+	maxGapBetweenApplyAndCommitIndex = 1000
 )
 
 type RaftKV interface {
@@ -77,22 +84,19 @@ type Authenticator interface {
 }
 
 func (s *EtcdServer) Range(ctx context.Context, r *pb.RangeRequest) (*pb.RangeResponse, error) {
-	var result *applyResult
-	var err error
-
 	if r.Serializable {
-		var user string
-		user, err = s.usernameFromCtx(ctx)
-		if err != nil {
-			return nil, err
+		var resp *pb.RangeResponse
+		var err error
+		chk := func(ai *auth.AuthInfo) error {
+			return s.authStore.IsRangePermitted(ai, r.Key, r.RangeEnd)
 		}
-		result = s.applyV3.Apply(
-			&pb.InternalRaftRequest{
-				Header: &pb.RequestHeader{Username: user},
-				Range:  r})
-	} else {
-		result, err = s.processInternalRaftRequest(ctx, pb.InternalRaftRequest{Range: r})
+		get := func() { resp, err = s.applyV3Base.Range(noTxn, r) }
+		if serr := s.doSerialize(ctx, chk, get); serr != nil {
+			return nil, serr
+		}
+		return resp, err
 	}
+	result, err := s.processInternalRaftRequest(ctx, pb.InternalRaftRequest{Range: r})
 	if err != nil {
 		return nil, err
 	}
@@ -125,21 +129,19 @@ func (s *EtcdServer) DeleteRange(ctx context.Context, r *pb.DeleteRangeRequest) 
 }
 
 func (s *EtcdServer) Txn(ctx context.Context, r *pb.TxnRequest) (*pb.TxnResponse, error) {
-	var result *applyResult
-	var err error
-
 	if isTxnSerializable(r) {
-		user, err := s.usernameFromCtx(ctx)
-		if err != nil {
-			return nil, err
+		var resp *pb.TxnResponse
+		var err error
+		chk := func(ai *auth.AuthInfo) error {
+			return checkTxnAuth(s.authStore, ai, r)
 		}
-		result = s.applyV3.Apply(
-			&pb.InternalRaftRequest{
-				Header: &pb.RequestHeader{Username: user},
-				Txn:    r})
-	} else {
-		result, err = s.processInternalRaftRequest(ctx, pb.InternalRaftRequest{Txn: r})
+		get := func() { resp, err = s.applyV3Base.Txn(r) }
+		if serr := s.doSerialize(ctx, chk, get); serr != nil {
+			return nil, serr
+		}
+		return resp, err
 	}
+	result, err := s.processInternalRaftRequest(ctx, pb.InternalRaftRequest{Txn: r})
 	if err != nil {
 		return nil, err
 	}
@@ -164,7 +166,7 @@ func isTxnSerializable(r *pb.TxnRequest) bool {
 }
 
 func (s *EtcdServer) Compact(ctx context.Context, r *pb.CompactionRequest) (*pb.CompactionResponse, error) {
-	result, err := s.processInternalRaftRequest(ctx, pb.InternalRaftRequest{Compaction: r})
+	result, err := s.processInternalRaftRequestOnce(ctx, pb.InternalRaftRequest{Compaction: r})
 	if r.Physical && result != nil && result.physc != nil {
 		<-result.physc
 		// The compaction is done deleting keys; the hash is now settled
@@ -197,7 +199,7 @@ func (s *EtcdServer) LeaseGrant(ctx context.Context, r *pb.LeaseGrantRequest) (*
 		// only use positive int64 id's
 		r.ID = int64(s.reqIDGen.Next() & ((1 << 63) - 1))
 	}
-	result, err := s.processInternalRaftRequest(ctx, pb.InternalRaftRequest{LeaseGrant: r})
+	result, err := s.processInternalRaftRequestOnce(ctx, pb.InternalRaftRequest{LeaseGrant: r})
 	if err != nil {
 		return nil, err
 	}
@@ -208,7 +210,7 @@ func (s *EtcdServer) LeaseGrant(ctx context.Context, r *pb.LeaseGrantRequest) (*
 }
 
 func (s *EtcdServer) LeaseRevoke(ctx context.Context, r *pb.LeaseRevokeRequest) (*pb.LeaseRevokeResponse, error) {
-	result, err := s.processInternalRaftRequest(ctx, pb.InternalRaftRequest{LeaseRevoke: r})
+	result, err := s.processInternalRaftRequestOnce(ctx, pb.InternalRaftRequest{LeaseRevoke: r})
 	if err != nil {
 		return nil, err
 	}
@@ -254,7 +256,7 @@ func (s *EtcdServer) LeaseRenew(id lease.LeaseID) (int64, error) {
 }
 
 func (s *EtcdServer) Alarm(ctx context.Context, r *pb.AlarmRequest) (*pb.AlarmResponse, error) {
-	result, err := s.processInternalRaftRequest(ctx, pb.InternalRaftRequest{Alarm: r})
+	result, err := s.processInternalRaftRequestOnce(ctx, pb.InternalRaftRequest{Alarm: r})
 	if err != nil {
 		return nil, err
 	}
@@ -265,7 +267,7 @@ func (s *EtcdServer) Alarm(ctx context.Context, r *pb.AlarmRequest) (*pb.AlarmRe
 }
 
 func (s *EtcdServer) AuthEnable(ctx context.Context, r *pb.AuthEnableRequest) (*pb.AuthEnableResponse, error) {
-	result, err := s.processInternalRaftRequest(ctx, pb.InternalRaftRequest{AuthEnable: r})
+	result, err := s.processInternalRaftRequestOnce(ctx, pb.InternalRaftRequest{AuthEnable: r})
 	if err != nil {
 		return nil, err
 	}
@@ -298,7 +300,7 @@ func (s *EtcdServer) Authenticate(ctx context.Context, r *pb.AuthenticateRequest
 		SimpleToken: st,
 	}
 
-	result, err := s.processInternalRaftRequest(ctx, pb.InternalRaftRequest{Authenticate: internalReq})
+	result, err := s.processInternalRaftRequestOnce(ctx, pb.InternalRaftRequest{Authenticate: internalReq})
 	if err != nil {
 		return nil, err
 	}
@@ -481,39 +483,76 @@ func (s *EtcdServer) isValidSimpleToken(token string) bool {
 	return true
 }
 
-func (s *EtcdServer) usernameFromCtx(ctx context.Context) (string, error) {
+func (s *EtcdServer) authInfoFromCtx(ctx context.Context) (*auth.AuthInfo, error) {
 	md, ok := metadata.FromContext(ctx)
 	if !ok {
-		return "", nil
+		return nil, nil
 	}
 
 	ts, tok := md["token"]
 	if !tok {
-		return "", nil
+		return nil, nil
 	}
 
 	token := ts[0]
 	if !s.isValidSimpleToken(token) {
-		return "", ErrInvalidAuthToken
+		return nil, ErrInvalidAuthToken
 	}
 
-	username, uok := s.AuthStore().UsernameFromToken(token)
+	authInfo, uok := s.AuthStore().AuthInfoFromToken(token)
 	if !uok {
 		plog.Warningf("invalid auth token: %s", token)
-		return "", ErrInvalidAuthToken
+		return nil, ErrInvalidAuthToken
 	}
-	return username, nil
+	return authInfo, nil
 }
 
-func (s *EtcdServer) processInternalRaftRequest(ctx context.Context, r pb.InternalRaftRequest) (*applyResult, error) {
+// doSerialize handles the auth logic, with permissions checked by "chk", for a serialized request "get". Returns a non-nil error on authentication failure.
+func (s *EtcdServer) doSerialize(ctx context.Context, chk func(*auth.AuthInfo) error, get func()) error {
+	for {
+		ai, err := s.authInfoFromCtx(ctx)
+		if err != nil {
+			return err
+		}
+		if ai == nil {
+			// chk expects non-nil AuthInfo; use empty credentials
+			ai = &auth.AuthInfo{}
+		}
+		if err = chk(ai); err != nil {
+			if err == auth.ErrAuthOldRevision {
+				continue
+			}
+			return err
+		}
+		// fetch response for serialized request
+		get()
+		//  empty credentials or current auth info means no need to retry
+		if ai.Revision == 0 || ai.Revision == s.authStore.Revision() {
+			return nil
+		}
+		// avoid TOCTOU error, retry of the request is required.
+	}
+}
+
+func (s *EtcdServer) processInternalRaftRequestOnce(ctx context.Context, r pb.InternalRaftRequest) (*applyResult, error) {
+	ai := s.getAppliedIndex()
+	ci := s.getCommittedIndex()
+	if ci > ai+maxGapBetweenApplyAndCommitIndex {
+		return nil, ErrTooManyRequests
+	}
+
 	r.Header = &pb.RequestHeader{
 		ID: s.reqIDGen.Next(),
 	}
-	username, err := s.usernameFromCtx(ctx)
+
+	authInfo, err := s.authInfoFromCtx(ctx)
 	if err != nil {
 		return nil, err
 	}
-	r.Header.Username = username
+	if authInfo != nil {
+		r.Header.Username = authInfo.Username
+		r.Header.AuthRevision = authInfo.Revision
+	}
 
 	data, err := r.Marshal()
 	if err != nil {
@@ -550,5 +589,18 @@ func (s *EtcdServer) processInternalRaftRequest(ctx context.Context, r pb.Intern
 	}
 }
 
+func (s *EtcdServer) processInternalRaftRequest(ctx context.Context, r pb.InternalRaftRequest) (*applyResult, error) {
+	var result *applyResult
+	var err error
+	for {
+		result, err = s.processInternalRaftRequestOnce(ctx, r)
+		if err != auth.ErrAuthOldRevision {
+			break
+		}
+	}
+
+	return result, err
+}
+
 // Watchable returns a watchable interface attached to the etcdserver.
-func (s *EtcdServer) Watchable() mvcc.Watchable { return s.KV() }
+func (s *EtcdServer) Watchable() mvcc.WatchableKV { return s.KV() }
