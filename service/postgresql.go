@@ -10,9 +10,11 @@ import (
 	_ "github.com/lib/pq"
 	"github.com/pkg/errors"
 	"io/ioutil"
+	"net"
 	"net/url"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -37,7 +39,8 @@ func NewPostgresql(config *PostgresqlConfig) (*postgresql, error) {
 	pg := &postgresql{
 		name:                 config.Name,
 		host:                 strings.Split(config.Listen, ":")[0],
-		dataDir:              config.DataDirectory,
+		dataDir:              filepath.Join(config.DataDirectory, "data"),
+		authDir:              filepath.Join(config.DataDirectory, "auth"),
 		maximumLagOnFailover: config.MaximumLagOnFailover,
 		replication:          config.Replication,
 		parameters:           config.Parameters,
@@ -50,6 +53,13 @@ func NewPostgresql(config *PostgresqlConfig) (*postgresql, error) {
 		return nil, err
 	}
 	pg.port = port
+
+	if err := os.MkdirAll(pg.dataDir, os.FileMode(0700)); err != nil {
+		return nil, errors.Wrap(err, "Error ensuring data dir is created")
+	}
+	if err := os.MkdirAll(pg.authDir, os.FileMode(0700)); err != nil {
+		return nil, errors.Wrap(err, "Error ensuring auth dir is created")
+	}
 
 	db, err := sql.Open("postgres", pg.localControlConnectionString())
 	if err != nil {
@@ -65,6 +75,7 @@ type postgresql struct {
 	host                 string
 	port                 int
 	dataDir              string
+	authDir              string
 	maximumLagOnFailover int
 	replication          postgresqlReplicationInfo
 	parameters           map[string]interface{}
@@ -342,7 +353,7 @@ func (p *postgresql) initialize() error {
 	return cmd.Run()
 }
 func (p *postgresql) writePGHBA() error {
-	hbaConf, err := os.OpenFile(fmt.Sprintf("%s/pg_hba.conf", p.dataDir),
+	hbaConf, err := os.OpenFile(filepath.Join(p.dataDir, "pg_hba.conf"),
 		os.O_RDWR|os.O_APPEND,
 		os.FileMode(0666),
 	)
@@ -432,7 +443,7 @@ func (p *postgresql) start() error {
 }
 
 func (p *postgresql) removePIDFile() error {
-	pidPath := fmt.Sprintf("%s/postmaster.pid", p.dataDir)
+	pidPath := filepath.Join(p.dataDir, "postmaster.pid")
 
 	if _, err := os.Stat(pidPath); err == nil {
 		if err := os.Remove(pidPath); err != nil {
@@ -585,8 +596,76 @@ func (p *postgresql) syncFromLeader(leader fsm.Leader) error {
 	p.opLock.Lock()
 	defer p.opLock.Unlock()
 
-	cmd := exec.Command("pg_basebackup", leader.(*clusterMember).ConnectionString)
+	if err := p.writePGPass(leader.(*clusterMember)); err != nil {
+		return errors.Wrap(err, "Error writing pgpass file")
+	}
+
+	pgURL, err := url.Parse(leader.(*clusterMember).ConnectionString)
+	if err != nil {
+		return errors.Wrap(err, "Error parsing leader connection string")
+	}
+
+	host, _, err := net.SplitHostPort(pgURL.Host)
+	if err != nil {
+		return errors.Wrap(err, "Error splitting host and port")
+	}
+
+	user := pgURL.User.Username()
+
+	dataArg := fmt.Sprintf("-D %s", p.dataDir)
+	userArg := fmt.Sprintf("-U %s", user)
+	hostArg := fmt.Sprintf("--host=%s", host)
+	streamXlogArg := fmt.Sprintf("--xlog-method=%s", "stream")
+
+	combinedArgs := strings.Join([]string{dataArg, userArg, hostArg, streamXlogArg}, " ")
+	fmt.Println(combinedArgs)
+
+	argFields := strings.Fields(combinedArgs)
+
+	cmd := exec.Command("pg_basebackup",
+		argFields...,
+	)
+
+	path, ok := os.LookupEnv("PATH")
+	if !ok {
+		return errors.New("PATH variable isn't set")
+	}
+
+	cmd.Env = []string{fmt.Sprintf("PGPASSFILE=%s", filepath.Join(p.authDir, ".pgpass")),
+		fmt.Sprintf("PATH=%s", path),
+	}
+
 	return errors.Wrap(cmd.Run(), "Error running pg_basebackup command")
+}
+
+func (p *postgresql) writePGPass(member *clusterMember) error {
+	pgURL, err := url.Parse(member.ConnectionString)
+	if err != nil {
+		return errors.Wrap(err, "Error parsing leader connection string")
+	}
+
+	host, port, err := net.SplitHostPort(pgURL.Host)
+	if err != nil {
+		return errors.Wrap(err, "Error splitting host and port")
+	}
+
+	user := pgURL.User.Username()
+	pass, _ := pgURL.User.Password()
+
+	pgPass, err := os.OpenFile(filepath.Join(p.authDir, ".pgpass"),
+		os.O_RDWR|os.O_CREATE|os.O_TRUNC,
+		os.FileMode(0600),
+	)
+	defer pgPass.Close()
+	if err != nil {
+		return errors.Wrap(err, "Error opening pgpass file")
+	}
+
+	_, err = pgPass.WriteString(
+		fmt.Sprintf("%s:%s:*:%s:%s", host, port, user, pass),
+	)
+
+	return errors.Wrap(err, "Error writing pgpass file")
 }
 
 var ErrorAlreadyLeader = errors.New("The node is already a leader")
@@ -710,7 +789,7 @@ func (p *postgresql) serverOptions() string {
 
 // writeRecovery is NOT concurrency safe. Manage with a lock before call
 func (p *postgresql) writeRecoveryConf(leader fsm.Leader) error {
-	conf, err := os.OpenFile(fmt.Sprintf("%s/recovery.conf", p.dataDir),
+	conf, err := os.OpenFile(filepath.Join(p.dataDir, "recovery.conf"),
 		os.O_RDWR|os.O_CREATE|os.O_TRUNC,
 		os.FileMode(0666),
 	)
