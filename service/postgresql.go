@@ -686,6 +686,10 @@ func (p *postgresql) FollowTheLeader(leader fsm.Leader) error {
 	defer p.atomicLock.Unlock()
 
 	if p.NeedsInitialization() {
+		log.WithFields(log.Fields{
+			"package": "governor",
+		})
+		log.Info("Syncing from Leader")
 		if err := p.syncFromLeader(leader); err != nil {
 			return errors.Wrap(err, "Error syncing from leader")
 		}
