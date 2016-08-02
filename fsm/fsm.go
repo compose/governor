@@ -8,11 +8,13 @@ import (
 	"github.com/pkg/errors"
 	"reflect"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
 type fsm struct {
 	sync.Mutex
+	observationLock sync.Mutex
 
 	syncTicker <-chan time.Time
 
@@ -23,13 +25,15 @@ type fsm struct {
 
 	current bool
 
-	leader    *leaderBackend
-	leaderc   chan *LeaderUpdate
-	leaderTTL int64
+	leader          *leaderBackend
+	leaderChans     map[uint64]chan LeaderUpdate
+	leaderObserveID uint64
+	leaderTTL       int64
 
-	members   map[string]*memberBackend
-	memberc   chan *MemberUpdate
-	memberTTL int64
+	members         map[string]*memberBackend
+	memberChans     map[uint64]chan MemberUpdate
+	memberObserveID uint64
+	memberTTL       int64
 
 	stopc    chan struct{}
 	stoppedc chan struct{}
@@ -42,15 +46,14 @@ type SingleLeaderFSM interface {
 	// init is set ONLY once in the life of the FSM
 	RaceForInit(timeout time.Duration) (bool, error)
 
-	// TODO: Treat as a proper chan? With observers?
-	LeaderCh() <-chan *LeaderUpdate
+	LeaderObserver() (LeaderObserver, error)
 	RaceForLeader(leader Leader) error
 	RefreshLeader() error
 	ForceLeader(leader Leader) error
 	DeleteLeader() error
 	Leader(leader Leader) (bool, error)
 
-	MemberCh() <-chan *MemberUpdate
+	MemberObserver() (MemberObserver, error)
 	SetMember(member Member) error
 	RefreshMember(id string) error
 	DeleteMember(id string) error
@@ -100,13 +103,17 @@ type Config struct {
 // TODO: Implement TTL for members
 func NewGovernorFSM(config *Config) (SingleLeaderFSM, error) {
 	newFSM := &fsm{
-		leaderTTL:  time.Duration(time.Duration(config.LeaderTTL) * time.Millisecond).Nanoseconds(),
-		memberTTL:  time.Duration(time.Duration(config.MemberTTL) * time.Millisecond).Nanoseconds(),
-		members:    make(map[string]*memberBackend),
-		syncTicker: time.Tick(500 * time.Millisecond),
-		stopc:      make(chan struct{}),
-		stoppedc:   make(chan struct{}),
-		gotInit:    make(chan bool),
+		leaderTTL:   time.Duration(time.Duration(config.LeaderTTL) * time.Millisecond).Nanoseconds(),
+		memberTTL:   time.Duration(time.Duration(config.MemberTTL) * time.Millisecond).Nanoseconds(),
+		members:     make(map[string]*memberBackend),
+		memberChans: make(map[uint64]chan MemberUpdate),
+		leaderChans: make(map[uint64]chan LeaderUpdate),
+		syncTicker:  time.Tick(500 * time.Millisecond),
+		stopc:       make(chan struct{}),
+		stoppedc:    make(chan struct{}),
+		gotInit:     make(chan bool),
+
+		observationLock: sync.Mutex{},
 	}
 
 	raftConfig := &canoe.NodeConfig{
@@ -209,8 +216,47 @@ func (f *fsm) UniqueID() uint64 {
 // LeaderCh then the LeaderUpdate will be lost it is the user's
 // responsibility to ensure the channel is consumed as aggressively as is needed
 // based on expected update to the leader
-func (f *fsm) LeaderCh() <-chan *LeaderUpdate {
-	return f.leaderc
+func (f *fsm) LeaderObserver() (LeaderObserver, error) {
+	f.observationLock.Lock()
+	defer f.observationLock.Unlock()
+	ch := make(chan LeaderUpdate)
+	observer := &leaderUpdateObserver{
+		updateCh: ch,
+		fsm:      f,
+		id:       atomic.AddUint64(&f.leaderObserveID, 1),
+	}
+	f.leaderChans[observer.id] = ch
+	return observer, nil
+}
+
+func (f *fsm) observeLeaderUpdate(lu *LeaderUpdate) error {
+	f.observationLock.Lock()
+	defer f.observationLock.Unlock()
+	for _, val := range f.leaderChans {
+		val <- *lu
+	}
+	return nil
+}
+
+type leaderUpdateObserver struct {
+	updateCh <-chan LeaderUpdate
+	fsm      *fsm
+	id       uint64
+}
+
+func (l *leaderUpdateObserver) LeaderCh() <-chan LeaderUpdate {
+	return l.updateCh
+}
+
+func (l *leaderUpdateObserver) Destroy() error {
+	return l.fsm.unregisterLeaderObserver(l)
+}
+
+func (f *fsm) unregisterLeaderObserver(l *leaderUpdateObserver) error {
+	f.observationLock.Lock()
+	defer f.observationLock.Unlock()
+	delete(f.leaderChans, l.id)
+	return nil
 }
 
 func (f *fsm) RaceForLeader(leader Leader) error {
@@ -244,8 +290,47 @@ func (f *fsm) Leader(leader Leader) (bool, error) {
 	return true, nil
 }
 
-func (f *fsm) MemberCh() <-chan *MemberUpdate {
-	return f.memberc
+func (f *fsm) MemberObserver() (MemberObserver, error) {
+	f.observationLock.Lock()
+	defer f.observationLock.Unlock()
+	ch := make(chan MemberUpdate)
+	updateObserver := &memberUpdateObserver{
+		updateCh: ch,
+		fsm:      f,
+		id:       atomic.AddUint64(&f.memberObserveID, 1),
+	}
+	f.memberChans[updateObserver.id] = ch
+	return updateObserver, nil
+}
+
+func (f *fsm) observeMemberUpdate(mu *MemberUpdate) error {
+	f.observationLock.Lock()
+	defer f.observationLock.Unlock()
+	for _, val := range f.memberChans {
+		val <- *mu
+	}
+	return nil
+}
+
+type memberUpdateObserver struct {
+	updateCh <-chan MemberUpdate
+	fsm      *fsm
+	id       uint64
+}
+
+func (m *memberUpdateObserver) MemberCh() <-chan MemberUpdate {
+	return m.updateCh
+}
+
+func (m *memberUpdateObserver) Destroy() error {
+	return m.fsm.unregisterMemberObserver(m)
+}
+
+func (f *fsm) unregisterMemberObserver(m *memberUpdateObserver) error {
+	f.observationLock.Lock()
+	defer f.observationLock.Unlock()
+	delete(f.memberChans, m.id)
+	return nil
 }
 
 func (f *fsm) SetMember(member Member) error {

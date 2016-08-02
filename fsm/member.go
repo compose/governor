@@ -25,3 +25,10 @@ type MemberUpdate struct {
 	OldMember     []byte
 	CurrentMember []byte
 }
+
+type MemberObserver interface {
+	MemberCh() <-chan MemberUpdate
+
+	// Destroy should unregister the chan from the FSM
+	Destroy() error
+}

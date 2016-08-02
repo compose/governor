@@ -11,11 +11,14 @@ import (
 )
 
 type SingleLeaderHA struct {
-	service    service.SingleLeaderService
-	fsm        fsm.SingleLeaderFSM
-	leaderc    <-chan *fsm.LeaderUpdate
-	memberc    <-chan *fsm.MemberUpdate
-	loopTicker <-chan time.Time
+	service        service.SingleLeaderService
+	fsm            fsm.SingleLeaderFSM
+	leaderObserver fsm.LeaderObserver
+	memberObserver fsm.MemberObserver
+	loopTicker     <-chan time.Time
+
+	wg    sync.WaitGroup
+	stopc chan interface{}
 
 	// we need to ensure we interact with the FSM and service in atomic units
 	sync.Mutex
@@ -31,9 +34,9 @@ func NewSingleLeaderHA(config *SingleLeaderHAConfig) *SingleLeaderHA {
 	return &SingleLeaderHA{
 		service:    config.Service,
 		fsm:        config.FSM,
-		leaderc:    config.FSM.LeaderCh(),
-		memberc:    config.FSM.MemberCh(),
 		loopTicker: time.Tick(config.UpdateWait),
+		wg:         sync.WaitGroup{},
+		stopc:      make(chan interface{}),
 	}
 
 }
@@ -44,12 +47,25 @@ func (ha *SingleLeaderHA) init() error {
 		"package": "ha",
 	}).Info("Trying to ensure FSM up to date")
 
+	// TODO: Turn this into chan
 	for !ha.fsm.CompletedRestore() {
 		time.Sleep(500 * time.Millisecond)
 		log.WithFields(log.Fields{
 			"package": "ha",
 		}).Debug("FSM not up to date. Retrying")
 	}
+
+	leaderObserver, err := ha.fsm.LeaderObserver()
+	if err != nil {
+		return errors.Wrap(err, "Error getting fsm LeaderObserver")
+	}
+	ha.leaderObserver = leaderObserver
+
+	memberObserver, err := ha.fsm.MemberObserver()
+	if err != nil {
+		return errors.Wrap(err, "Error getting fsm LeaderObserver")
+	}
+	ha.memberObserver = memberObserver
 
 	log.WithFields(log.Fields{
 		"package": "ha",
@@ -185,12 +201,20 @@ func (ha *SingleLeaderHA) Run() error {
 
 	for {
 		select {
+		case <-ha.stopc:
+			return nil
 		case <-ha.loopTicker:
 			if err := ha.RunCycle(); err != nil {
 				return err
 			}
 		}
 	}
+	return nil
+}
+
+func (ha *SingleLeaderHA) Stop() error {
+	close(ha.stopc)
+	ha.wg.Wait()
 	return nil
 }
 
@@ -240,19 +264,30 @@ func (ha *SingleLeaderHA) RunCycle() error {
 
 // Spawning several goroutines as we need to VERY aggressively consume these chans
 func (ha *SingleLeaderHA) scanChannels() {
+	ha.wg.Add(1)
 	go ha.scanMemberChan()
+
+	ha.wg.Add(1)
 	go ha.scanLeaderChan()
 }
 
 func (ha *SingleLeaderHA) scanMemberChan() {
 	for {
-		go func(ha *SingleLeaderHA, mu *fsm.MemberUpdate) {
-			if err := ha.handleMemberUpdate(mu); err != nil {
+		select {
+		case <-ha.stopc:
+			ha.memberObserver.Destroy()
+			ha.wg.Done()
+			return
+		case mu := <-ha.memberObserver.MemberCh():
+			log.WithFields(log.Fields{
+				"package": "ha",
+			}).Infof("Member Update occurred: %v", mu)
+			if err := ha.handleMemberUpdate(&mu); err != nil {
 				log.WithFields(log.Fields{
 					"package": "ha",
 				}).Errorf("Error handling member update %+v", err)
 			}
-		}(ha, <-ha.memberc)
+		}
 	}
 }
 
@@ -285,13 +320,21 @@ func (ha *SingleLeaderHA) handleMemberUpdate(mu *fsm.MemberUpdate) error {
 
 func (ha *SingleLeaderHA) scanLeaderChan() {
 	for {
-		go func(ha *SingleLeaderHA, leader *fsm.LeaderUpdate) {
-			if err := ha.handleLeaderUpdate(leader); err != nil {
+		select {
+		case <-ha.stopc:
+			ha.leaderObserver.Destroy()
+			ha.wg.Done()
+			return
+		case lu := <-ha.leaderObserver.LeaderCh():
+			log.WithFields(log.Fields{
+				"package": "ha",
+			}).Infof("Leader Update occurred: %v", lu)
+			if err := ha.handleLeaderUpdate(&lu); err != nil {
 				log.WithFields(log.Fields{
 					"package": "ha",
 				}).Errorf("Error handling leader update %+v", err)
 			}
-		}(ha, <-ha.leaderc)
+		}
 	}
 }
 

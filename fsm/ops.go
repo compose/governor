@@ -112,9 +112,8 @@ func (f *fsm) applyDeleteLeader() error {
 
 	f.leader = nil
 
-	select {
-	case f.leaderc <- update:
-	default:
+	if err := f.observeLeaderUpdate(update); err != nil {
+		return errors.Wrap(err, "Error observing leader update")
 	}
 
 	return nil
@@ -151,11 +150,12 @@ func (f *fsm) applyDeleteStaleLeader(cmdData []byte) error {
 		update.OldLeader = f.leader.Data
 
 		if cmd.Time >= f.leader.Time+f.leader.TTL {
+			log.WithFields(log.Fields{
+				"package": "fsm",
+			}).Info("Deleting stale leader")
 			f.leader = nil
-			select {
-
-			case f.leaderc <- update:
-			default:
+			if err := f.observeLeaderUpdate(update); err != nil {
+				return errors.Wrap(err, "Error observing leader update")
 			}
 		}
 	}
@@ -200,9 +200,8 @@ func (f *fsm) applyForceLeader(cmdData []byte) error {
 
 	update.CurrentLeader = f.leader.Data
 
-	select {
-	case f.leaderc <- update:
-	default:
+	if err := f.observeLeaderUpdate(update); err != nil {
+		return errors.Wrap(err, "Error observing leader update")
 	}
 
 	return nil
@@ -250,9 +249,8 @@ func (f *fsm) applyRaceLeader(cmdData []byte) error {
 			CurrentLeader: f.leader.Data,
 		}
 
-		select {
-		case f.leaderc <- update:
-		default:
+		if err := f.observeLeaderUpdate(update); err != nil {
+			return errors.Wrap(err, "Error observing leader update")
 		}
 	}
 
@@ -330,9 +328,8 @@ func (f *fsm) applySetMember(cmdData []byte) error {
 
 	update.CurrentMember = f.members[cmd.ID].Data
 
-	select {
-	case f.memberc <- update:
-	default:
+	if err := f.observeMemberUpdate(update); err != nil {
+		return errors.Wrap(err, "Error observing member update")
 	}
 
 	return nil
@@ -412,11 +409,10 @@ func (f *fsm) applyDeleteMember(cmdData []byte) error {
 			OldMember: f.members[cmd.ID].Data,
 		}
 
-		select {
-		case f.memberc <- update:
-		default:
-		}
 		delete(f.members, cmd.ID)
+		if err := f.observeMemberUpdate(update); err != nil {
+			return errors.Wrap(err, "Error observing member update")
+		}
 	}
 
 	return nil
@@ -453,13 +449,11 @@ func (f *fsm) applyDeleteStaleMembers(cmdData []byte) error {
 				OldMember: member.Data,
 			}
 
-			select {
-
-			case f.memberc <- update:
-			default:
-			}
-
 			delete(f.members, id)
+
+			if err := f.observeMemberUpdate(update); err != nil {
+				return errors.Wrap(err, "Error observing member update")
+			}
 
 		}
 	}

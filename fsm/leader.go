@@ -21,3 +21,10 @@ type LeaderUpdate struct {
 	CurrentLeader []byte
 	OldLeader     []byte
 }
+
+type LeaderObserver interface {
+	LeaderCh() <-chan LeaderUpdate
+
+	// Destroy should unregister the chan from the FSM
+	Destroy() error
+}
