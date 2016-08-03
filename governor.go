@@ -8,6 +8,8 @@ import (
 	"github.com/compose/governor/fsm"
 	"github.com/compose/governor/ha"
 	"github.com/compose/governor/service"
+	"os"
+	"os/signal"
 	"path/filepath"
 	"time"
 )
@@ -66,13 +68,32 @@ func main() {
 		"package": "governor",
 	}).Infof("Creating new HA")
 
-	ha := ha.NewSingleLeaderHA(haConf)
+	singleHA := ha.NewSingleLeaderHA(haConf)
 
 	log.WithFields(log.Fields{
 		"package": "governor",
 	}).Infof("Running new HA")
 
-	if err := ha.Run(); err != nil {
+	c := make(chan os.Signal, 1)
+	signal.Notify(c, os.Interrupt)
+	go func(singleHA *ha.SingleLeaderHA, singleLeaderState fsm.SingleLeaderFSM, pg service.SingleLeaderService) {
+		for _ = range c {
+			log.WithFields(log.Fields{
+				"package": "governor",
+			}).Info("Shutting down")
+
+			if err := singleHA.Stop(); err != nil {
+				log.WithFields(log.Fields{
+					"package": "governor",
+				}).Errorf("Did not successfully teardown %+v", err)
+			}
+
+			log.WithFields(log.Fields{
+				"package": "governor",
+			}).Info("Clean Shutdown Finished")
+		}
+	}(singleHA, singleLeaderState, pg)
+	if err := singleHA.Run(); err != nil {
 		log.Fatalf("Error Running HA, %+v", err)
 	}
 }
