@@ -506,12 +506,19 @@ func (p *postgresql) Restart() error {
 	p.opLock.Lock()
 	defer p.opLock.Unlock()
 
+	restartArg := "restart"
+	waitFlag := "-w"
+	dataArg := fmt.Sprintf("-D %s", p.dataDir)
+	mArg := fmt.Sprintf("-m %s", "fast")
+
+	combinedArgs := strings.Join([]string{restartArg, waitFlag, dataArg, mArg}, " ")
+
+	argFields := strings.Fields(combinedArgs)
+
 	cmd := exec.Command("pg_ctl",
-		"restart",
-		"-w",
-		fmt.Sprintf("-D %s", p.dataDir),
-		"-m fast",
+		argFields...,
 	)
+
 	log.WithFields(log.Fields{
 		"package": "postgresql",
 	}).Info("Restarting Postgresql")
@@ -561,10 +568,16 @@ func (p *postgresql) promote() error {
 	p.opLock.Lock()
 	defer p.opLock.Unlock()
 
+	promoteArg := "promote"
+	waitFlag := "-w"
+	dataArg := fmt.Sprintf("-D %s", p.dataDir)
+
+	combinedArgs := strings.Join([]string{promoteArg, waitFlag, dataArg}, " ")
+
+	argFields := strings.Fields(combinedArgs)
+
 	cmd := exec.Command("pg_ctl",
-		"promote",
-		"-w",
-		fmt.Sprintf("-D %s", p.dataDir),
+		argFields...,
 	)
 	return errors.Wrap(cmd.Run(), "Error running pg_ctl promote command")
 }
