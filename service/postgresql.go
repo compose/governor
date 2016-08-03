@@ -778,6 +778,8 @@ func (p *postgresql) NeedsInitialization() bool {
 }
 
 func (p *postgresql) IsRunning() bool {
+	p.opLock.Lock()
+	defer p.opLock.Unlock()
 
 	statusArg := "status"
 	dataArg := fmt.Sprintf("-D %s", p.dataDir)
