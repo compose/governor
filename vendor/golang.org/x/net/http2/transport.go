@@ -414,10 +414,6 @@ func (t *Transport) NewClientConn(c net.Conn) (*ClientConn, error) {
 }
 
 func (t *Transport) newClientConn(c net.Conn, singleUse bool) (*ClientConn, error) {
-	if VerboseLogs {
-		t.vlogf("http2: Transport creating client conn to %v", c.RemoteAddr())
-	}
-
 	cc := &ClientConn{
 		t:                    t,
 		tconn:                c,
@@ -429,6 +425,9 @@ func (t *Transport) newClientConn(c net.Conn, singleUse bool) (*ClientConn, erro
 		streams:              make(map[uint32]*clientStream),
 		singleUse:            singleUse,
 		wantSettingsAck:      true,
+	}
+	if VerboseLogs {
+		t.vlogf("http2: Transport creating client conn %#x to %v", cc, c.RemoteAddr())
 	}
 	cc.cond = sync.NewCond(&cc.mu)
 	cc.flow.add(int32(initialWindowSize))
@@ -509,8 +508,13 @@ func (cc *ClientConn) closeIfIdle() {
 		return
 	}
 	cc.closed = true
+	nextID := cc.nextStreamID
 	// TODO: do clients send GOAWAY too? maybe? Just Close:
 	cc.mu.Unlock()
+
+	if VerboseLogs {
+		cc.vlogf("http2: Transport closing idle conn %#x (forSingleUse=%v, maxStream=%v)", cc, cc.singleUse, nextID-2)
+	}
 
 	cc.tconn.Close()
 }
@@ -1225,11 +1229,15 @@ func (rl *clientConnReadLoop) run() error {
 	for {
 		f, err := cc.fr.ReadFrame()
 		if err != nil {
-			cc.vlogf("Transport readFrame error: (%T) %v", err, err)
+			cc.vlogf("http2: Transport readFrame error on conn %#x: (%T) %v", cc, err, err)
 		}
 		if se, ok := err.(StreamError); ok {
 			if cs := cc.streamByID(se.StreamID, true /*ended; remove it*/); cs != nil {
-				rl.endStreamError(cs, cc.fr.errDetail)
+				cs.cc.writeStreamReset(cs.ID, se.Code, err)
+				if se.Cause == nil {
+					se.Cause = cc.fr.errDetail
+				}
+				rl.endStreamError(cs, se)
 			}
 			continue
 		} else if err != nil {
@@ -1273,6 +1281,9 @@ func (rl *clientConnReadLoop) run() error {
 			cc.logf("Transport: unhandled response frame type %T", f)
 		}
 		if err != nil {
+			if VerboseLogs {
+				cc.vlogf("http2: Transport conn %#x received error from processing frame %v: %v", cc, summarizeFrame(f), err)
+			}
 			return err
 		}
 		if rl.closeWhenIdle && gotReply && maybeIdle && len(rl.activeRes) == 0 {
@@ -1639,6 +1650,11 @@ func (rl *clientConnReadLoop) endStreamError(cs *clientStream, err error) {
 	if isConnectionCloseRequest(cs.req) {
 		rl.closeWhenIdle = true
 	}
+
+	select {
+	case cs.resc <- resAndError{err: err}:
+	default:
+	}
 }
 
 func (cs *clientStream) copyTrailers() {
@@ -1740,7 +1756,7 @@ func (rl *clientConnReadLoop) processResetStream(f *RSTStreamFrame) error {
 		// which closes this, so there
 		// isn't a race.
 	default:
-		err := StreamError{cs.ID, f.ErrCode}
+		err := streamError(cs.ID, f.ErrCode)
 		cs.resetErr = err
 		close(cs.peerReset)
 		cs.bufPipe.CloseWithError(err)

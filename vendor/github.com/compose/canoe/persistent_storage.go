@@ -45,11 +45,10 @@ func (rn *Node) initPersistentStorage() error {
 
 // Correct order of ops
 // 1: Restore Metadata from WAL
-// 2: Apply any Snapshot to raft storage
-// 3: Apply any hardstate to raft storage
-// 4: Apply and WAL Entries to raft storage
-// 5: Apply any persisted snapshot to FSM
-// 6: Apply any persisted WAL data to FSM
+// 2: Apply any persisted snapshot to FSM
+// 3: Apply any Snapshot to raft storage
+// 4: Apply any hardstate to raft storage
+// 5: Apply and WAL Entries to raft storage
 func (rn *Node) restoreRaft() error {
 	raftSnap, err := rn.ss.Load()
 	if err != nil {
@@ -85,20 +84,20 @@ func (rn *Node) restoreRaft() error {
 		return errors.Wrap(err, "Error starting raft transport layer")
 	}
 
-	// NOTE: Step 2, 3, 4
-	if err := rn.restoreMemoryStorage(*raftSnap, hState, ents); err != nil {
-		return errors.Wrap(err, "Error restoring raft memory storage")
-	}
-
-	// NOTE: Step 5
+	// NOTE: Step 2
 	if err := rn.restoreFSMFromSnapshot(*raftSnap); err != nil {
 		return errors.Wrap(err, "Error restoring FSM from snapshot")
 	}
 
-	// NOTE: Step 6
-	if err := rn.restoreFSMFromWAL(ents); err != nil {
-		return errors.Wrap(err, "Error restoring FSM from WAL")
+	// NOTE: Step 3, 4, 5
+	if err := rn.restoreMemoryStorage(*raftSnap, hState, ents); err != nil {
+		return errors.Wrap(err, "Error restoring raft memory storage")
 	}
+
+	// NOTE: Step 6
+	/*if err := rn.restoreFSMFromWAL(ents); err != nil {
+		return errors.Wrap(err, "Error restoring FSM from WAL")
+	}*/
 
 	return nil
 }
