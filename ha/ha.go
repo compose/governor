@@ -202,6 +202,7 @@ func (ha *SingleLeaderHA) Run() error {
 	for {
 		select {
 		case <-ha.stopc:
+			ha.wg.Wait()
 			return nil
 		case <-ha.loopTicker:
 			if err := ha.RunCycle(); err != nil {
@@ -209,12 +210,21 @@ func (ha *SingleLeaderHA) Run() error {
 			}
 		}
 	}
+
 	return nil
 }
 
 func (ha *SingleLeaderHA) Stop() error {
+	ha.wg.Add(1)
+	defer ha.wg.Done()
+
 	close(ha.stopc)
-	ha.wg.Wait()
+	if err := ha.fsm.Cleanup(); err != nil {
+		return err
+	}
+	if err := ha.service.Stop(); err != nil {
+		return err
+	}
 	return nil
 }
 
