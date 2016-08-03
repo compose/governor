@@ -528,6 +528,8 @@ func (p *postgresql) Restart() error {
 }
 
 func (p *postgresql) IsHealthy() bool {
+	p.atomicLock.Lock()
+	defer p.atomicLock.Unlock()
 	if !p.IsRunning() {
 		return false
 	}

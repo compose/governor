@@ -54,19 +54,6 @@ func (ha *SingleLeaderHA) init() error {
 			"package": "ha",
 		}).Debug("FSM not up to date. Retrying")
 	}
-
-	leaderObserver, err := ha.fsm.LeaderObserver()
-	if err != nil {
-		return errors.Wrap(err, "Error getting fsm LeaderObserver")
-	}
-	ha.leaderObserver = leaderObserver
-
-	memberObserver, err := ha.fsm.MemberObserver()
-	if err != nil {
-		return errors.Wrap(err, "Error getting fsm LeaderObserver")
-	}
-	ha.memberObserver = memberObserver
-
 	log.WithFields(log.Fields{
 		"package": "ha",
 	}).Info("FSM is up to date")
@@ -139,6 +126,11 @@ func (ha *SingleLeaderHA) init() error {
 
 		// TODO: break the else logic into better bits
 	} else {
+		log.WithFields(log.Fields{
+			"package": "ha",
+		}).Info("Service is already initialized")
+
+		// TODO: Become leader if none exists
 		leader, err := ha.waitForLeader(eb)
 		if err != nil {
 			return err
@@ -147,6 +139,18 @@ func (ha *SingleLeaderHA) init() error {
 			return err
 		}
 	}
+
+	leaderObserver, err := ha.fsm.LeaderObserver()
+	if err != nil {
+		return errors.Wrap(err, "Error getting fsm LeaderObserver")
+	}
+	ha.leaderObserver = leaderObserver
+
+	memberObserver, err := ha.fsm.MemberObserver()
+	if err != nil {
+		return errors.Wrap(err, "Error getting fsm LeaderObserver")
+	}
+	ha.memberObserver = memberObserver
 
 	return nil
 }

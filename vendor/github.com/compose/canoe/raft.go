@@ -208,39 +208,56 @@ func (rn *Node) Start() error {
 	rn.stopc = make(chan struct{})
 
 	if walEnabled {
+		rn.logger.Info("Initializing persistent storage")
 		if err := rn.initPersistentStorage(); err != nil {
 			return errors.Wrap(err, "Error initializing persistent storage")
 		}
+		rn.logger.Info("Finished initializing persistent storage")
 	}
 
 	if rejoinCluster {
+		rn.logger.Info("Restoring canoe from persistent storage")
 		if err := rn.restoreRaft(); err != nil {
 			return errors.Wrap(err, "Error restoring raft")
 		}
+		rn.logger.Info("Finished restoring canoe from persistent storage")
+
+		rn.logger.Info("Restarting canoe node")
 		rn.node = raft.RestartNode(rn.raftConfig)
+		rn.logger.Info("Successfully restarted canoe node")
 	} else {
 		// TODO: Fix the mess that is transport initialization
+		rn.logger.Info("Attaching transport layer")
 		if err := rn.attachTransport(); err != nil {
 			return errors.Wrap(err, "Error attaching raft transport")
 		}
+		rn.logger.Info("Successfully attached transport layer")
 
+		rn.logger.Info("Starting transport layer")
 		if err := rn.transport.Start(); err != nil {
 			return errors.Wrap(err, "Error starting raft transport")
 		}
+		rn.logger.Info("Successfully Started transport layer")
+
 		if rn.bootstrapNode {
+			rn.logger.Info("Starting node as bootstrap")
 			rn.node = raft.StartNode(rn.raftConfig, []raft.Peer{raft.Peer{ID: rn.id}})
 		} else {
+			rn.logger.Info("Starting node without bootstrap flag")
 			rn.node = raft.StartNode(rn.raftConfig, nil)
 		}
 	}
 
+	rn.logger.Debug("Advancing election ticks")
 	if err := rn.advanceTicksForElection(); err != nil {
 		return errors.Wrap(err, "Error optimizing election ticks")
 	}
+	rn.logger.Debug("Successfully advanced election ticks")
 
 	rn.initialized = true
 
 	go func(rn *Node) {
+		rn.logger.Info("Scanning for new raft logs")
 		if err := rn.scanReady(); err != nil {
 			rn.logger.Fatalf("%+v", err)
 		}
@@ -248,6 +265,7 @@ func (rn *Node) Start() error {
 
 	// Start config http service
 	go func(rn *Node) {
+		rn.logger.Info("Starting http config service")
 		if err := rn.serveHTTP(); err != nil {
 			rn.logger.Fatalf("%+v", err)
 		}
@@ -255,6 +273,7 @@ func (rn *Node) Start() error {
 
 	// start raft
 	go func(rn *Node) {
+		rn.logger.Info("Starting raft server")
 		if err := rn.serveRaft(); err != nil {
 			rn.logger.Fatalf("%+v", err)
 		}
@@ -262,10 +281,12 @@ func (rn *Node) Start() error {
 	rn.started = true
 
 	if rejoinCluster {
+		rn.logger.Info("Rejoining canoe cluster")
 		if err := rn.selfRejoinCluster(); err != nil {
 			return errors.Wrap(err, "Error rejoining raft cluster")
 		}
 	} else if !rn.bootstrapNode {
+		rn.logger.Info("Adding self to existing cluster")
 		if err := rn.addSelfToCluster(); err != nil {
 			return errors.Wrap(err, "Error adding self to existing raft cluster")
 		}
@@ -285,16 +306,16 @@ func (rn *Node) IsRunning() bool {
 //
 // Note: stopping will not remove this node from the cluster. This means that it will affect consensus and quorum
 func (rn *Node) Stop() error {
-	rn.logger.Info("Stopping raft")
+	rn.logger.Info("Stopping canoe")
 	close(rn.stopc)
 
-	rn.logger.Info("Stopping raft transporter")
+	rn.logger.Debug("Stopping raft transporter")
 	rn.transport.Stop()
 	// TODO: Don't poll stuff here
 	for rn.running {
 		time.Sleep(200 * time.Millisecond)
 	}
-	rn.logger.Info("Raft has stopped")
+	rn.logger.Info("Canoe has stopped")
 	rn.started = false
 	rn.initialized = false
 	return nil
@@ -306,16 +327,24 @@ func (rn *Node) Stop() error {
 //
 // WARNING! - Destroy will recursively remove everything under <DataDir>/snap and <DataDir>/wal
 func (rn *Node) Destroy() error {
+	rn.logger.Debug("Removing self from canoe cluster")
 	if err := rn.removeSelfFromCluster(); err != nil {
 		return errors.Wrap(err, "Error removing self from existing cluster")
 	}
+	rn.logger.Debug("Successfully removed self from canoe cluster")
+
 	close(rn.stopc)
+	rn.logger.Debug("Stopping raft transport layer")
 	rn.transport.Stop()
 	// TODO: Have a stopped chan for triggering this action
 	for rn.running {
 		time.Sleep(200 * time.Millisecond)
 	}
+
+	rn.logger.Debug("Deleting persistent data")
 	rn.deletePersistentData()
+	rn.logger.Debug("Successfully deleted persistent data")
+
 	rn.running = false
 	rn.started = false
 	rn.initialized = false
@@ -638,16 +667,21 @@ func (rn *Node) restoreFSMFromSnapshot(raftSnap raftpb.Snapshot) error {
 		return nil
 	}
 
+	rn.logger.Info("Restoring FSM from snapshot")
 	var snapStruct snapshot
 	if err := json.Unmarshal(raftSnap.Data, &snapStruct); err != nil {
 		return errors.Wrap(err, "Error unmarshaling raft snapshot")
 	}
 
+	rn.logger.Debug("Scanning snapshot for peers")
 	for id, info := range snapStruct.Metadata.Peers {
 		raftURL := fmt.Sprintf("http://%s", net.JoinHostPort(info.IP, strconv.Itoa(info.RaftPort)))
+		rn.logger.Debug("Adding transport peer from Snapshot: %x - %s", id, raftURL)
 		rn.transport.AddPeer(types.ID(id), []string{raftURL})
+		rn.peerMap[id] = info
 	}
 
+	rn.logger.Debug("Inserting raw Snapshot data into FSM")
 	if err := rn.fsm.Restore(SnapshotData(snapStruct.Data)); err != nil {
 		return errors.Wrap(err, "Error restoring FSM from snapshot when calling external FSM")
 	}
@@ -742,24 +776,31 @@ func (rn *Node) createSnapAndCompact(force bool) error {
 		},
 		Data: []byte(fsmData),
 	}
+	rn.logger.Debug("Snapshot Creating Peers: %v", finalSnap.Metadata.Peers)
 
 	data, err := json.Marshal(finalSnap)
 	if err != nil {
 		return errors.Wrap(err, "Error marshalling wrapped snapshot")
 	}
 
+	rn.logger.Debug("Creating Snapsot")
 	raftSnap, err := rn.raftStorage.CreateSnapshot(index, rn.lastConfState, []byte(data))
 	if err != nil {
 		return errors.Wrap(err, "Error creating snapshot in memory storage")
 	}
+	rn.logger.Debug("Successfully Created Snapsot")
 
+	rn.logger.Debug("Compacting storage")
 	if err = rn.raftStorage.Compact(raftSnap.Metadata.Index); err != nil {
 		return errors.Wrap(err, "Error compacting memory storage after snapshot")
 	}
+	rn.logger.Debug("Successfully compacted storage")
 
+	rn.logger.Debug("Persisting snapshot")
 	if err = rn.persistSnapshot(raftSnap); err != nil {
 		return errors.Wrap(err, "Error persisting snapshot")
 	}
+	rn.logger.Debug("Successfully persisted snapshot")
 
 	return nil
 }
@@ -821,6 +862,7 @@ func (rn *Node) publishEntries(ents []raftpb.Entry) error {
 					raftURL := fmt.Sprintf("http://%s", net.JoinHostPort(ctxData.IP, strconv.Itoa(ctxData.RaftPort)))
 
 					if cc.NodeID != rn.id {
+						rn.logger.Debug("Adding transport peer from raft entry: %x - %s", cc.NodeID, raftURL)
 						rn.transport.AddPeer(types.ID(cc.NodeID), []string{raftURL})
 					}
 					rn.peerMap[cc.NodeID] = ctxData

@@ -234,7 +234,7 @@ func (rn *Node) addPeersFromRemote(remotePeer string, remoteMemberResponse *http
 		net.JoinHostPort(reqHost, strconv.Itoa(remoteMemberResponse.RaftPort)))
 
 	rn.transport.AddPeer(types.ID(remoteMemberResponse.ID), []string{addURL})
-	rn.logger.Infof("Adding peer from HTTP request: %x\n", remoteMemberResponse.ID)
+	rn.logger.Info("Adding peer from HTTP request: %x\n", remoteMemberResponse.ID)
 	rn.peerMap[remoteMemberResponse.ID] = confChangeNodeContext{
 		IP:       reqHost,
 		RaftPort: remoteMemberResponse.RaftPort,
@@ -246,7 +246,7 @@ func (rn *Node) addPeersFromRemote(remotePeer string, remoteMemberResponse *http
 		if id != rn.id {
 			addURL := fmt.Sprintf("http://%s", net.JoinHostPort(context.IP, strconv.Itoa(context.RaftPort)))
 			rn.transport.AddPeer(types.ID(id), []string{addURL})
-			rn.logger.Infof("Adding peer from HTTP request: %x\n", id)
+			rn.logger.Info("Adding peer from HTTP request: %x\n", id)
 		}
 		rn.peerMap[id] = context
 		rn.logger.Debugf("Current Peer Map: %v", rn.peerMap)

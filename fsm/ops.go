@@ -241,6 +241,7 @@ func (f *fsm) applyRaceLeader(cmdData []byte) error {
 
 	f.Lock()
 	defer f.Unlock()
+
 	if f.leader == nil {
 		f.leader = &cmd.leaderBackend
 
@@ -470,7 +471,8 @@ func (f *fsm) proposeDeleteStaleMembers() error {
 }
 
 type newNodeUpToDateCmd struct {
-	ID uint64 `json:"id"`
+	ID        uint64 `json:"id"`
+	Timestamp int64  `json:"timestamp"`
 }
 
 // TODO: Have timestamp here for confirmation
@@ -487,7 +489,7 @@ func (f *fsm) applyNewNodeUpToDate(cmdData []byte) error {
 	f.Lock()
 	defer f.Unlock()
 
-	if f.UniqueID() == cmd.ID {
+	if f.UniqueID() == cmd.ID && f.startTime == cmd.Timestamp {
 		f.current = true
 	}
 
@@ -496,14 +498,16 @@ func (f *fsm) applyNewNodeUpToDate(cmdData []byte) error {
 
 func (f *fsm) proposeNewNodeUpToDate() error {
 	req := &newNodeUpToDateCmd{
-		ID: f.UniqueID(),
+		ID:        f.UniqueID(),
+		Timestamp: f.startTime,
 	}
 
 	return errors.Wrap(f.proposeCmd(newNodeUpToDateOp, req), "Error proposing new node up to date cmd")
 }
 
 type raceForInitCmd struct {
-	ID uint64 `json:"id"`
+	ID        uint64 `json:"id"`
+	Timestamp int64  `json:"timestamp"`
 }
 
 func (f *fsm) applyRaceForInit(cmdData []byte) error {
@@ -519,21 +523,28 @@ func (f *fsm) applyRaceForInit(cmdData []byte) error {
 	f.Lock()
 	defer f.Unlock()
 
+	log.Debug("Sending down chan")
 	if f.initID != nil {
-		f.gotInit <- false
-	} else if f.UniqueID() == cmd.ID {
+		if f.gotInit != nil {
+			f.gotInit <- false
+		}
+	} else if f.UniqueID() == cmd.ID && cmd.Timestamp == f.startTime {
 		f.initID = &cmd.ID
-		f.gotInit <- true
+		if f.gotInit != nil {
+			f.gotInit <- true
+		}
 	} else {
 		f.initID = &cmd.ID
 	}
+	log.Debug("Done sending down chan")
 
 	return nil
 }
 
 func (f *fsm) proposeRaceForInit() error {
 	req := &raceForInitCmd{
-		ID: f.UniqueID(),
+		ID:        f.UniqueID(),
+		Timestamp: f.startTime,
 	}
 
 	return errors.Wrap(f.proposeCmd(raceForInitOp, req), "Error proposing race for init cmd")

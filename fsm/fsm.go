@@ -37,6 +37,8 @@ type fsm struct {
 
 	stopc    chan struct{}
 	stoppedc chan struct{}
+
+	startTime int64
 }
 
 type SingleLeaderFSM interface {
@@ -103,17 +105,21 @@ type Config struct {
 // TODO: Implement TTL for members
 func NewGovernorFSM(config *Config) (SingleLeaderFSM, error) {
 	newFSM := &fsm{
-		leaderTTL:   time.Duration(time.Duration(config.LeaderTTL) * time.Millisecond).Nanoseconds(),
-		memberTTL:   time.Duration(time.Duration(config.MemberTTL) * time.Millisecond).Nanoseconds(),
-		members:     make(map[string]*memberBackend),
+		leaderTTL: time.Duration(time.Duration(config.LeaderTTL) * time.Millisecond).Nanoseconds(),
+		memberTTL: time.Duration(time.Duration(config.MemberTTL) * time.Millisecond).Nanoseconds(),
+
+		members: make(map[string]*memberBackend),
+
 		memberChans: make(map[uint64]chan MemberUpdate),
 		leaderChans: make(map[uint64]chan LeaderUpdate),
-		syncTicker:  time.Tick(500 * time.Millisecond),
-		stopc:       make(chan struct{}),
-		stoppedc:    make(chan struct{}),
-		gotInit:     make(chan bool),
+
+		stopc:    make(chan struct{}),
+		stoppedc: make(chan struct{}),
 
 		observationLock: sync.Mutex{},
+
+		syncTicker: time.Tick(500 * time.Millisecond),
+		startTime:  time.Now().UnixNano(),
 	}
 
 	raftConfig := &canoe.NodeConfig{
