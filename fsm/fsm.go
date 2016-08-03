@@ -77,6 +77,10 @@ func (f *fsm) RaceForInit(timeout time.Duration) (bool, error) {
 		return false, nil
 	}
 
+	f.Lock()
+	f.gotInit = make(chan bool)
+	f.Unlock()
+
 	if err := f.proposeRaceForInit(); err != nil {
 		return false, errors.Wrap(err, "Error proposing race for init")
 	}
@@ -86,9 +90,11 @@ func (f *fsm) RaceForInit(timeout time.Duration) (bool, error) {
 	case <-time.After(timeout):
 		return false, ErrorRaceTimedOut
 	case val := <-f.gotInit:
+		f.Lock()
+		f.gotInit = nil
+		f.Unlock()
 		return val, nil
 	}
-
 }
 
 type Config struct {
