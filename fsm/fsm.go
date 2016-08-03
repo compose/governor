@@ -195,6 +195,8 @@ func (f *fsm) run() error {
 
 	for {
 		select {
+		case <-f.stopc:
+			return nil
 		case <-ttlTicker.C:
 			if err := f.proposeDeleteStaleLeader(); err != nil {
 				return errors.Wrap(err, "Error proposing delete stale leader")
@@ -431,15 +433,6 @@ func (f *fsm) Destroy() error {
 	case <-f.stoppedc:
 	case <-time.Tick(10 * time.Second):
 		return ErrorTimedOutCleanup
-	}
-
-	return nil
-	close(f.stopc)
-
-	select {
-	case <-f.stoppedc:
-	case <-time.Tick(10 * time.Second):
-		return ErrorTimedOutDestroy
 	}
 
 	return nil
