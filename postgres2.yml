@@ -1,0 +1,30 @@
+loop_wait: 1000 #milliseconds
+data_dir: "data/postgres2" #canoe and pg data will go here
+fsm:
+  raft_port: 1236
+  api_port: 1246
+  bootstrap_peers:
+          - http://localhost:1244
+          - http://localhost:1245
+  #TODO: Alter canoe to allow set-list of bootstrap peers
+  is_bootstrap: false  
+  # cluster_id: 1234
+  leader_ttl: 3000 #milliseconds
+  member_ttl: 3000 #milliseconds
+postgresql:
+  name: postgresql2
+  listen: 127.0.0.1:5434
+  maximum_lag_on_failover: 1048576 # 1 megabyte in bytes
+  replication:
+    username: replication
+    password: rep-pass
+    network:  127.0.0.1/32
+  parameters:
+    archive_mode: "on"
+    wal_level: hot_standby
+    archive_command: mkdir -p ../wal_archive && cp %p ../wal_archive/%f
+    max_wal_senders: 5
+    wal_keep_segments: 8
+    archive_timeout: 1800s
+    max_replication_slots: 5
+    hot_standby: "on"
