@@ -420,9 +420,10 @@ func (p *postgresql) start() error {
 
 	startArg := "start"
 	waitFlag := "-w"
+	logArg := fmt.Sprintf("--log=%s", filepath.Join(p.dataDir, "pg_log"))
 	dataArg := fmt.Sprintf("-D %s", p.dataDir)
 
-	combinedArgs := strings.Join([]string{startArg, waitFlag, dataArg}, " ")
+	combinedArgs := strings.Join([]string{startArg, logArg, waitFlag, dataArg}, " ")
 
 	argFields := strings.Fields(combinedArgs)
 
@@ -488,9 +489,10 @@ func (p *postgresql) stop() error {
 
 	stopArg := "stop"
 	waitFlag := "-w"
+	logArg := fmt.Sprintf("--log=%s", filepath.Join(p.dataDir, "pg_log"))
 	dataArg := fmt.Sprintf("-D %s", p.dataDir)
 
-	combinedArgs := strings.Join([]string{stopArg, waitFlag, dataArg}, " ")
+	combinedArgs := strings.Join([]string{stopArg, logArg, waitFlag, dataArg}, " ")
 
 	argFields := strings.Fields(combinedArgs)
 
@@ -508,10 +510,11 @@ func (p *postgresql) Restart() error {
 
 	restartArg := "restart"
 	waitFlag := "-w"
+	logArg := fmt.Sprintf("--log=%s", filepath.Join(p.dataDir, "pg_log"))
 	dataArg := fmt.Sprintf("-D %s", p.dataDir)
 	mArg := fmt.Sprintf("-m %s", "fast")
 
-	combinedArgs := strings.Join([]string{restartArg, waitFlag, dataArg, mArg}, " ")
+	combinedArgs := strings.Join([]string{restartArg, waitFlag, logArg, dataArg, mArg}, " ")
 
 	argFields := strings.Fields(combinedArgs)
 
@@ -569,10 +572,11 @@ func (p *postgresql) promote() error {
 	defer p.opLock.Unlock()
 
 	promoteArg := "promote"
+	logArg := fmt.Sprintf("--log=%s", filepath.Join(p.dataDir, "pg_log"))
 	waitFlag := "-w"
 	dataArg := fmt.Sprintf("-D %s", p.dataDir)
 
-	combinedArgs := strings.Join([]string{promoteArg, waitFlag, dataArg}, " ")
+	combinedArgs := strings.Join([]string{promoteArg, logArg, waitFlag, dataArg}, " ")
 
 	argFields := strings.Fields(combinedArgs)
 
@@ -782,9 +786,10 @@ func (p *postgresql) IsRunning() bool {
 	defer p.opLock.Unlock()
 
 	statusArg := "status"
+	logArg := fmt.Sprintf("--log=%s", filepath.Join(p.dataDir, "pg_log"))
 	dataArg := fmt.Sprintf("-D %s", p.dataDir)
 
-	combinedArgs := strings.Join([]string{statusArg, dataArg}, " ")
+	combinedArgs := strings.Join([]string{statusArg, logArg, dataArg}, " ")
 
 	argFields := strings.Fields(combinedArgs)
 
