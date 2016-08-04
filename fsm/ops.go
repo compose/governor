@@ -33,7 +33,6 @@ func init() {
 }
 
 // Apply completes the FSM requirement
-// TODO: Add initialization Race?
 func (f *fsm) Apply(log canoe.LogData) error {
 	var cmd command
 	if err := json.Unmarshal(log, &cmd); err != nil {
@@ -475,7 +474,6 @@ type newNodeUpToDateCmd struct {
 	Timestamp int64  `json:"timestamp"`
 }
 
-// TODO: Have timestamp here for confirmation
 func (f *fsm) applyNewNodeUpToDate(cmdData []byte) error {
 	log.WithFields(log.Fields{
 		"package": "fsm",

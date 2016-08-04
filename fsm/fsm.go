@@ -108,7 +108,6 @@ type Config struct {
 	MemberTTL      int      `yaml:"member_ttl"`
 }
 
-// TODO: Implement TTL for members
 func NewGovernorFSM(config *Config) (SingleLeaderFSM, error) {
 	newFSM := &fsm{
 		leaderTTL: time.Duration(time.Duration(config.LeaderTTL) * time.Millisecond).Nanoseconds(),
@@ -170,7 +169,6 @@ func NewGovernorFSM(config *Config) (SingleLeaderFSM, error) {
 		"package": "fsm",
 	}).Info("Waiting for Governor FSM to catch up on raft logs")
 	// TODO: Have this come down a chan
-	// TODO: Perhaps have this expire on occasion and force a touching update
 	for !newFSM.CompletedRestore() {
 		if err := newFSM.proposeNewNodeUpToDate(); err != nil {
 			return nil, errors.Wrap(err, "Error proposing new node up to date")
