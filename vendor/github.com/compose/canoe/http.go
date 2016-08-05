@@ -277,7 +277,7 @@ func (rn *Node) requestSelfAddition() error {
 		resp, err = http.Post(peerAPIURL, "application/json", reader)
 		if err != nil {
 			rn.logger.Warning(err.Error())
-			//return err
+			return err
 		}
 
 		defer resp.Body.Close()

@@ -8,7 +8,7 @@ imports:
 - name: github.com/cenk/backoff
   version: ""
 - name: github.com/compose/canoe
-  version: 8bbd12624b4a258f551fa4d645824ae6e9db7a2f
+  version: 8aaa9ebbcf517ed649bebcc1c0e42e06667dc4b0
 - name: github.com/coreos/etcd
   version: ""
   subpackages:
