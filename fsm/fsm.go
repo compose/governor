@@ -20,16 +20,19 @@ type fsm struct {
 
 	raft *canoe.Node
 
+	// record initID in snapshot
 	initID  *uint64
 	gotInit chan bool
 
 	current bool
 
+	// record leader in snapshot
 	leader          *leaderBackend
 	leaderChans     map[uint64]chan LeaderUpdate
 	leaderObserveID uint64
 	leaderTTL       int64
 
+	// record members in snapshot
 	members         map[string]*memberBackend
 	memberChans     map[uint64]chan MemberUpdate
 	memberObserveID uint64
