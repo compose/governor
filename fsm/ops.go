@@ -530,7 +530,6 @@ func (f *fsm) applyRaceForInit(cmdData []byte) error {
 	f.Lock()
 	defer f.Unlock()
 
-	log.Debug("Sending down chan")
 	if f.initID != nil {
 		if f.gotInit != nil {
 			f.gotInit <- false
@@ -543,7 +542,6 @@ func (f *fsm) applyRaceForInit(cmdData []byte) error {
 	} else {
 		f.initID = &cmd.ID
 	}
-	log.Debug("Done sending down chan")
 
 	return nil
 }
