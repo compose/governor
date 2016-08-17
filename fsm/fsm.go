@@ -469,6 +469,7 @@ func (f *fsm) Destroy() error {
 type fsmSnapshot struct {
 	Members map[string]*memberBackend `json:"members"`
 	Leader  *leaderBackend            `json:"leader"`
+	InitID  *uint64                   `json:"init_id"`
 }
 
 func (f *fsm) Restore(data canoe.SnapshotData) error {
@@ -488,6 +489,7 @@ func (f *fsm) Restore(data canoe.SnapshotData) error {
 	// As snapshots are only applied at startup
 	f.members = fsmSnap.Members
 	f.leader = fsmSnap.Leader
+	f.initID = fsmSnap.InitID
 
 	return nil
 }
@@ -501,6 +503,7 @@ func (f *fsm) Snapshot() (canoe.SnapshotData, error) {
 	retData, err := json.Marshal(&fsmSnapshot{
 		Members: f.members,
 		Leader:  f.leader,
+		InitID:  f.initID,
 	})
 
 	return retData, errors.Wrap(err, "Error marshalling fsm snapshot")
