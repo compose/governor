@@ -283,19 +283,40 @@ func (p *postgresql) lastOperation() (uint64, error) {
 }
 
 func (p *postgresql) AddMembers(members []fsm.Member) error {
-	for _, member := range members {
-		if err := p.addReplSlot(member); err != nil {
-			return errors.Wrap(err, "Issue adding members to PG")
-		}
+	p.atomicLock.Lock()
+	defer p.atomicLock.Unlock()
+
+	log.WithFields(log.Fields{
+		"package": "postgresql",
+	}).Infof("Adding members")
+	meAsFSMMember, err := p.AsFSMMember()
+	if err != nil {
+		return errors.Wrap(err, "Error getting self as FSM Member")
 	}
+
+	for _, member := range members {
+		if member.ID() != meAsFSMMember.ID() && p.runningAsLeader() {
+			if err := p.addReplSlot(member); err != nil {
+				return errors.Wrap(err, "Issue adding members to PG")
+			}
+		}
+		p.members[member.ID()] = member
+	}
+	log.WithFields(log.Fields{
+		"package": "postgresql",
+	}).Infof("Successfully added members")
 	return nil
 }
 
 // this should be safe async
 func (p *postgresql) addReplSlot(member fsm.Member) error {
-	_, err := p.conn.Exec("DO LANGUAGE plpgsql $$DECLARE somevar VARCHAR; "+
-		"BEGIN SELECT slot_name INTO somevar FROM pg_replication_slots WHERE slot_name = $1 LIMIT 1; "+
-		"IF NOT FOUND THEN PERFORM pg_create_physical_replication_slot($1); END IF; END$$;", member.ID())
+	log.WithFields(log.Fields{
+		"package": "postgresql",
+	}).Infof("Adding Repl slot with ID: %s", member.ID())
+	query := fmt.Sprintf("DO LANGUAGE plpgsql $$DECLARE somevar VARCHAR; "+
+		"BEGIN SELECT slot_name INTO somevar FROM pg_replication_slots WHERE slot_name = '%s' LIMIT 1; "+
+		"IF NOT FOUND THEN PERFORM pg_create_physical_replication_slot('%s'); END IF; END$$;", member.ID(), member.ID())
+	_, err := p.conn.Exec(query)
 	if err != nil {
 		return errors.Wrap(err, "Error querying pg for replication slot addition")
 	}
@@ -303,20 +324,56 @@ func (p *postgresql) addReplSlot(member fsm.Member) error {
 	return nil
 }
 
-func (p *postgresql) DeleteMembers(members []fsm.Member) error {
-	for _, member := range members {
-		if err := p.deleteReplSlot(member); err != nil {
-			return errors.Wrap(err, "Issue deleting members from PG")
+func (p *postgresql) addAllMembersReplSlot() error {
+	meAsFSMMember, err := p.AsFSMMember()
+	if err != nil {
+		return errors.Wrap(err, "Error getting self as FSM Member")
+	}
+	for _, member := range p.members {
+		if member.ID() != meAsFSMMember.ID() {
+			if err := p.addReplSlot(member); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
 }
 
+func (p *postgresql) DeleteMembers(members []fsm.Member) error {
+	p.atomicLock.Lock()
+	defer p.atomicLock.Unlock()
+
+	log.WithFields(log.Fields{
+		"package": "postgresql",
+	}).Infof("Deleting members")
+	meAsFSMMember, err := p.AsFSMMember()
+	if err != nil {
+		return errors.Wrap(err, "Error getting self as FSM Member")
+	}
+	for _, member := range members {
+		if member.ID() != meAsFSMMember.ID() && p.runningAsLeader() {
+			if err := p.deleteReplSlot(member); err != nil {
+				return errors.Wrap(err, "Issue deleting members from PG")
+			}
+		}
+		delete(p.members, member.ID())
+	}
+	log.WithFields(log.Fields{
+		"package": "postgresql",
+	}).Infof("Successfully deleted members")
+
+	return nil
+}
+
 // this should be safe async
 func (p *postgresql) deleteReplSlot(member fsm.Member) error {
-	_, err := p.conn.Exec("DO LANGUAGE plpgsql $$DECLARE somevar VARCHAR; "+
-		"BEGIN SELECT slot_name INTO somevar FROM pg_replication_slots WHERE slot_name = $1 LIMIT 1; "+
-		"IF FOUND THEN PERFORM pg_drop_replication_slot($1); END IF; END$$;", member.ID())
+	log.WithFields(log.Fields{
+		"package": "postgresql",
+	}).Infof("Deleting Repl slot with ID: %s", member.ID())
+	query := fmt.Sprintf("DO LANGUAGE plpgsql $$DECLARE somevar VARCHAR; "+
+		"BEGIN SELECT slot_name INTO somevar FROM pg_replication_slots WHERE slot_name = '%s' LIMIT 1; "+
+		"IF FOUND THEN PERFORM pg_drop_replication_slot('%s'); END IF; END$$;", member.ID(), member.ID())
+	_, err := p.conn.Exec(query)
 	if err != nil {
 		return errors.Wrap(err, "Error querying pg for replication slot deletion")
 	}
