@@ -24,7 +24,7 @@ type PostgresqlConfig struct {
 	Name                 string                    `yaml:"name"`
 	Listen               string                    `yaml:"listen"`
 	DataDirectory        string                    `yaml:"data_dir"`
-	MaximumLagOnFailover int                       `yaml:"maximum_lag_on_failover"`
+	MaximumLagOnFailover uint64                    `yaml:"maximum_lag_on_failover"`
 	Replication          postgresqlReplicationInfo `yaml:"replication"`
 	Parameters           map[string]interface{}    `yaml:"parameters"`
 }
@@ -77,7 +77,7 @@ type postgresql struct {
 	port                 int
 	dataDir              string
 	authDir              string
-	maximumLagOnFailover int
+	maximumLagOnFailover uint64
 	replication          postgresqlReplicationInfo
 	parameters           map[string]interface{}
 
@@ -100,7 +100,7 @@ type postgresql struct {
 
 type clusterMember struct {
 	Name             string `json:"name"`
-	WalPosition      int    `json:"wal_position"`
+	WalPosition      uint64 `json:"wal_position"`
 	ConnectionString string `json:"connection_string"`
 }
 
@@ -197,12 +197,12 @@ func (p *postgresql) IsHealthiestOf(leader fsm.Leader, members []fsm.Member) boo
 	}
 
 	// If we're behind the leader's position we know we aren't healthy
-	if leader.(*clusterMember).WalPosition-selfLocation > p.maximumLagOnFailover {
+	if leader != nil && leader.(*clusterMember).WalPosition-selfLocation > p.maximumLagOnFailover {
 		return false
 	}
 
 	for _, member := range members {
-		if leader.ID() == member.ID() {
+		if (leader != nil && leader.ID() == member.ID()) || member.ID() == p.name {
 			continue
 		}
 		member := member.(*clusterMember)
@@ -233,10 +233,13 @@ func (p *postgresql) healthierThan(c2 *clusterMember) bool {
 		"SELECT $1 - (pg_last_xlog_replay_location() - '0/000000'::pg_lsn) AS bytes;",
 		location)
 
-	var diff int
+	var diff uint64
 	if err := result.Scan(&diff); err != nil {
 		return false
 	}
+
+	log.Infof("Difference between logs in health check %d", diff)
+	log.Infof("My last op: %d", location)
 
 	if diff < 0 {
 		return false
@@ -244,10 +247,10 @@ func (p *postgresql) healthierThan(c2 *clusterMember) bool {
 	return true
 }
 
-func (p *postgresql) xlogReplayLocation() (int, error) {
+func (p *postgresql) xlogReplayLocation() (uint64, error) {
 	row := p.conn.QueryRow("SELECT pg_last_xlog_replay_location() - '0/0000000'::pg_lsn;")
 
-	var location int
+	var location uint64
 	if err := row.Scan(&location); err != nil {
 		switch {
 		case err == sql.ErrNoRows:
@@ -259,10 +262,10 @@ func (p *postgresql) xlogReplayLocation() (int, error) {
 	return location, nil
 }
 
-func (p *postgresql) xlogLocation() (int, error) {
+func (p *postgresql) xlogLocation() (uint64, error) {
 	result := p.conn.QueryRow("SELECT pg_current_xlog_location() - '0/0000000'::pg_lsn;")
 
-	var location int
+	var location uint64
 	if err := result.Scan(&location); err != nil {
 		return 0, err
 	}
@@ -270,7 +273,7 @@ func (p *postgresql) xlogLocation() (int, error) {
 	return location, nil
 }
 
-func (p *postgresql) lastOperation() (int, error) {
+func (p *postgresql) lastOperation() (uint64, error) {
 	// TODO: have leader check be atomic query
 	if p.runningAsLeader() {
 		return p.xlogLocation()
