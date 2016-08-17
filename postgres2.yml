@@ -20,7 +20,7 @@ postgresql:
     password: rep-pass
     network:  127.0.0.1/32
   parameters:
-    archive_mode: "on"
+    archive_mode: "always"
     wal_level: hot_standby
     archive_command: mkdir -p ../wal_archive && cp %p ../wal_archive/%f
     max_wal_senders: 5
