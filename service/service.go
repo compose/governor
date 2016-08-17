@@ -5,7 +5,6 @@ import (
 	"github.com/compose/governor/fsm"
 )
 
-// TODO:Needs some way to check a fsm Interface values it defines
 // TODO: Maybe pass leader and member data as []byte to avoid hoop jumping?
 type SingleLeaderService interface {
 	Initialize() error         //Check

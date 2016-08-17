@@ -321,16 +321,25 @@ func (f *fsm) applySetMember(cmdData []byte) error {
 	f.Lock()
 	defer f.Unlock()
 	update := &MemberUpdate{
-		Type:      MemberUpdateSetType,
-		OldMember: f.members[cmd.ID].Data,
+		Type: MemberUpdateSetType,
 	}
+	if _, ok := f.members[cmd.ID]; ok {
+		update.OldMember = f.members[cmd.ID].Data
+	}
+
 	f.members[cmd.ID] = &cmd.memberBackend
 
 	update.CurrentMember = f.members[cmd.ID].Data
 
+	log.WithFields(log.Fields{
+		"package": "fsm",
+	}).Debug("Observing set member update")
 	if err := f.observeMemberUpdate(update); err != nil {
 		return errors.Wrap(err, "Error observing member update")
 	}
+	log.WithFields(log.Fields{
+		"package": "fsm",
+	}).Debug("Successfully observed set member update")
 
 	return nil
 }

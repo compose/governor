@@ -6,7 +6,7 @@ import (
 	"github.com/compose/canoe"
 	"github.com/gorilla/mux"
 	"github.com/pkg/errors"
-	"reflect"
+	_ "reflect"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -60,7 +60,7 @@ type SingleLeaderFSM interface {
 	RefreshMember(id string) error
 	DeleteMember(id string) error
 	Member(id string, member Member) (bool, error)
-	Members(members interface{}) error
+	Members() ([][]byte, error)
 
 	CompletedRestore() bool
 
@@ -372,22 +372,30 @@ func (f *fsm) Member(id string, member Member) (bool, error) {
 
 // Members gives all the members of the cluster
 // you must pass a pointer to a slice of
-func (f *fsm) Members(members interface{}) error {
-	// Documented here http://stackoverflow.com/questions/25384640/why-golang-reflect-makeslice-returns-un-addressable-value
-	// And the example from mgo http://bazaar.launchpad.net/+branch/mgo/v2/view/head:/session.go#L2769
-	// This explains the odd reason for specifying the pointer to slice
+/*func (f *fsm) Members(members interface{}) error {
+// Documented here http://stackoverflow.com/questions/25384640/why-golang-reflect-makeslice-returns-un-addressable-value
+// And the example from mgo http://bazaar.launchpad.net/+branch/mgo/v2/view/head:/session.go#L2769
+// This explains the odd reason for specifying the pointer to slice
+/*
 	resultv := reflect.ValueOf(members)
 	memberType := reflect.TypeOf((*Member)(nil)).Elem()
+	log.Infof("Member type - %v", memberType)
 
 	if resultv.Kind() != reflect.Ptr ||
 		resultv.Elem().Kind() != reflect.Slice ||
 		!reflect.PtrTo(resultv.Elem().Type().Elem()).Implements(memberType) {
 
+		log.Infof("ResKind: %v - ResElemKind: %v",
+			resultv.Kind(), resultv.Elem().Kind(),
+		)
 		return errors.New("Must provide a pointer to slice of Member - &[]Member")
 	}
 
 	sliceType := resultv.Elem().Type().Elem()
 	retMembers := reflect.Indirect(reflect.New(resultv.Elem().Type()))
+
+	log.Infof("Slice Type: %v", sliceType)
+	log.Infof("ret members: %v %v", retMembers, resultv.Elem().Type())
 
 	f.Lock()
 	defer f.Unlock()
@@ -406,8 +414,15 @@ func (f *fsm) Members(members interface{}) error {
 	}
 
 	resultv.Elem().Set(retMembers)
+*/
 
-	return nil
+func (f *fsm) Members() ([][]byte, error) {
+	retArr := [][]byte{}
+	for _, member := range f.members {
+		retArr = append(retArr, member.Data)
+	}
+
+	return retArr, nil
 }
 
 func (f *fsm) CompletedRestore() bool {

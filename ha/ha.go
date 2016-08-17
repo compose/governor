@@ -152,7 +152,44 @@ func (ha *SingleLeaderHA) init() error {
 	}
 	ha.memberObserver = memberObserver
 
+	// We can do this since we haven't started listening to channels
+	// And will have little affect on performance
+	if err := ha.addAllFSMMembersToService(); err != nil {
+		return errors.Wrap(err, "Error adding members to service")
+	}
+
 	return nil
+}
+
+func (ha *SingleLeaderHA) addAllFSMMembersToService() error {
+	members, err := ha.allFSMMembers()
+	if err != nil {
+		return err
+	}
+
+	if err := ha.service.AddMembers(members); err != nil {
+		return errors.Wrap(err, "Error adding members to service")
+	}
+
+	return nil
+}
+
+func (ha *SingleLeaderHA) allFSMMembers() ([]fsm.Member, error) {
+	membersData, err := ha.fsm.Members()
+	if err != nil {
+		return []fsm.Member{}, err
+	}
+
+	members := []fsm.Member{}
+	for _, member := range membersData {
+		fsmMember, err := ha.service.FSMMemberFromBytes(member)
+		if err != nil {
+			return members, err
+		}
+		members = append(members, fsmMember)
+	}
+
+	return members, nil
 }
 
 func (ha *SingleLeaderHA) raceRetryForInit(eb *backoff.ExponentialBackOff) (bool, error) {
@@ -223,12 +260,15 @@ func (ha *SingleLeaderHA) Stop() error {
 	defer ha.wg.Done()
 
 	close(ha.stopc)
+	// TODO: This may be racey against an existing health check op
+
 	if err := ha.fsm.Cleanup(); err != nil {
 		return err
 	}
 	if err := ha.service.Stop(); err != nil {
 		return err
 	}
+
 	return nil
 }
 
@@ -248,6 +288,17 @@ func (ha *SingleLeaderHA) RunCycle() error {
 
 		if err := ha.fsm.RefreshMember(member.ID()); err != nil {
 			return err
+		}
+
+		tempMember := ha.service.FSMMemberTemplate()
+		exists, err := ha.fsm.Member(member.ID(), tempMember)
+		if err != nil {
+			return errors.Wrap(err, "Error checking for member existance")
+		}
+		if !exists {
+			if err := ha.fsm.SetMember(member); err != nil {
+				return errors.Wrap(err, "Error setting member")
+			}
 		}
 
 		isLeader, err := ha.isLeader()
@@ -378,18 +429,28 @@ func (ha *SingleLeaderHA) handleLeaderUpdate(mu *fsm.LeaderUpdate) error {
 			return ha.service.FollowTheLeader(leader)
 		}
 
+	// TODO: Fix this to find healthiest node first
 	case fsm.LeaderUpdateDeletedType:
-		if err := ha.service.FollowNoLeader(); err != nil {
-			return err
-		}
-
-		lead, err := ha.service.AsFSMLeader()
+		members, err := ha.allFSMMembers()
 		if err != nil {
 			return err
 		}
+		if ha.service.IsHealthiestOf(nil, members) {
+			log.WithFields(log.Fields{
+				"package": "ha",
+			}).Info("We are the healthiest node - trying to get leader")
 
-		return ha.fsm.RaceForLeader(lead)
-
+			lead, err := ha.service.AsFSMLeader()
+			if err != nil {
+				return err
+			}
+			return ha.fsm.RaceForLeader(lead)
+		} else {
+			log.WithFields(log.Fields{
+				"package": "ha",
+			}).Info("We are not the healthiest node - following no leader")
+			return ha.service.FollowNoLeader()
+		}
 	default:
 		return errors.New("Unknown update type")
 	}

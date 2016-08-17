@@ -46,6 +46,7 @@ func NewPostgresql(config *PostgresqlConfig) (*postgresql, error) {
 		parameters:           config.Parameters,
 		opLock:               &sync.Mutex{},
 		atomicLock:           &sync.Mutex{},
+		members:              make(map[string]fsm.Member),
 	}
 
 	port, err := strconv.Atoi(strings.Split(config.Listen, ":")[1])
@@ -84,6 +85,8 @@ type postgresql struct {
 	// Should be bounded only to queries or sys execs, NEVER lock while calling
 	// Other functions from postgresql struct
 	opLock *sync.Mutex
+
+	members map[string]fsm.Member
 
 	// atomicLock allows us to bind a set of operations to a lock
 	// As such we avoid tricky situations where we don't know if calling a long
@@ -269,7 +272,7 @@ func (p *postgresql) xlogLocation() (int, error) {
 
 func (p *postgresql) lastOperation() (int, error) {
 	// TODO: have leader check be atomic query
-	if p.RunningAsLeader() {
+	if p.runningAsLeader() {
 		return p.xlogLocation()
 	} else {
 		return p.xlogReplayLocation()
@@ -315,6 +318,21 @@ func (p *postgresql) deleteReplSlot(member fsm.Member) error {
 		return errors.Wrap(err, "Error querying pg for replication slot deletion")
 	}
 
+	return nil
+}
+
+func (p *postgresql) deleteAllMembersReplSlot() error {
+	meAsFSMMember, err := p.AsFSMMember()
+	if err != nil {
+		return errors.Wrap(err, "Error getting self as FSM Member")
+	}
+	for _, member := range p.members {
+		if member.ID() != meAsFSMMember.ID() {
+			if err := p.deleteReplSlot(member); err != nil {
+				return err
+			}
+		}
+	}
 	return nil
 }
 
@@ -389,19 +407,18 @@ func (p *postgresql) Start() error {
 	p.atomicLock.Lock()
 	defer p.atomicLock.Unlock()
 
-	if p.IsRunning() {
+	if p.isRunning() {
 		return ErrorAlreadyRunning{
 			Service: "postgresql",
 		}
 	}
+	log.WithFields(log.Fields{
+		"package": "postgresql",
+	}).Info("Starting Postgresql")
 
 	if err := p.removePIDFile(); err != nil {
 		return errors.Wrap(err, "Error removing PID file")
 	}
-
-	log.WithFields(log.Fields{
-		"package": "postgresql",
-	}).Info("Starting Postgresql")
 
 	if err := p.start(); err != nil {
 		return errors.Wrap(err, "Error starting PG")
@@ -410,7 +427,6 @@ func (p *postgresql) Start() error {
 	log.WithFields(log.Fields{
 		"package": "postgresql",
 	}).Info("Successfully started Postgresql")
-
 	return nil
 }
 
@@ -463,7 +479,7 @@ func (p *postgresql) Stop() error {
 	p.atomicLock.Lock()
 	defer p.atomicLock.Unlock()
 
-	if !p.IsRunning() {
+	if !p.isRunning() {
 		return ErrorNotRunning{
 			Service: "postgresql",
 		}
@@ -503,8 +519,14 @@ func (p *postgresql) stop() error {
 	return errors.Wrap(cmd.Run(), "Error running pg_ctl stop command")
 }
 
-// Restart restarts the PG instance.
 func (p *postgresql) Restart() error {
+	p.atomicLock.Lock()
+	defer p.atomicLock.Unlock()
+	return p.restart()
+}
+
+// Restart restarts the PG instance.
+func (p *postgresql) restart() error {
 	p.opLock.Lock()
 	defer p.opLock.Unlock()
 
@@ -540,7 +562,7 @@ func (p *postgresql) Restart() error {
 func (p *postgresql) IsHealthy() bool {
 	p.atomicLock.Lock()
 	defer p.atomicLock.Unlock()
-	if !p.IsRunning() {
+	if !p.isRunning() {
 		return false
 	}
 
@@ -558,6 +580,9 @@ func (p *postgresql) Promote() error {
 
 	if err := p.promote(); err != nil {
 		return errors.Wrap(err, "Error promiting node")
+	}
+	if err := p.addAllMembersReplSlot(); err != nil {
+		return err
 	}
 
 	log.WithFields(log.Fields{
@@ -598,8 +623,13 @@ func (p *postgresql) Demote(leader fsm.Leader) error {
 	if err := p.writeRecoveryConf(leader); err != nil {
 		return errors.Wrap(err, "Error writing recovery conf")
 	}
-	if p.IsRunning() {
-		if err := p.Restart(); err != nil {
+
+	if err := p.deleteAllMembersReplSlot(); err != nil {
+		return err
+	}
+
+	if p.isRunning() {
+		if err := p.restart(); err != nil {
 			return errors.Wrap(err, "Error restarting PG")
 		}
 	}
@@ -690,6 +720,18 @@ func (p *postgresql) writePGPass(member *clusterMember) error {
 var ErrorAlreadyLeader = errors.New("The node is already a leader")
 
 func (p *postgresql) RunningAsLeader() bool {
+	p.atomicLock.Lock()
+	defer p.atomicLock.Unlock()
+	return p.runningAsLeader()
+}
+
+func (p *postgresql) runningAsLeader() bool {
+	if !p.isRunning() {
+		return false
+	}
+
+	p.opLock.Lock()
+	defer p.opLock.Unlock()
 	row := p.conn.QueryRow("SELECT pg_is_in_recovery()")
 
 	var inRecovery bool
@@ -714,38 +756,26 @@ func (p *postgresql) FollowTheLeader(leader fsm.Leader) error {
 		}
 	}
 
-	// Is this nescessary since we'll just be writing over it?
-	// Me thinks premature optimization
-	/*
-		parsedLead, err := url.Parse(leader.(*clusterMember).ConnectionString)
-		if err != nil {
-			return err
-		}
-			cmd := exec.Command("grep",
-				fmt.Sprintf("'host=%s port=%d'", parsedLead.Host, parsedLead.Port),
-				fmt.Sprintf("%s/recovery.conf", p.dataDir),
-			)
-			// Wait call will return runtime errors
-			if err := cmd.Start(); err != nil {
-				return err
-			}
-
-			err := cmd.Wait()
-
-			switch err {
-			case exec.ExitError:
-			default:
-				return err
-			}
-	*/
-
 	if err := p.writeRecoveryConf(leader); err != nil {
 		return errors.Wrap(err, "Error writing recovery conf")
 	}
-	if p.IsRunning() {
-		if err := p.Restart(); err != nil {
+
+	if p.isRunning() {
+		if err := p.restart(); err != nil {
 			return errors.Wrap(err, "Error restarting PG")
 		}
+	} else {
+		log.WithFields(log.Fields{
+			"package": "governor",
+		})
+		log.Info("Starting Postgresql")
+		if err := p.start(); err != nil {
+			return errors.Wrap(err, "Error starting PG")
+		}
+		log.WithFields(log.Fields{
+			"package": "governor",
+		})
+		log.Info("Successfully started Postgresql")
 	}
 
 	return nil
@@ -758,8 +788,8 @@ func (p *postgresql) FollowNoLeader() error {
 	if err := p.writeRecoveryConf(nil); err != nil {
 		return errors.Wrap(err, "Error writing recovery conf")
 	}
-	if p.IsRunning() {
-		if err := p.Restart(); err != nil {
+	if p.isRunning() {
+		if err := p.restart(); err != nil {
 			return errors.Wrap(err, "Error restarting PG")
 		}
 	}
@@ -782,6 +812,12 @@ func (p *postgresql) NeedsInitialization() bool {
 }
 
 func (p *postgresql) IsRunning() bool {
+	p.atomicLock.Lock()
+	defer p.atomicLock.Unlock()
+	return p.isRunning()
+}
+
+func (p *postgresql) isRunning() bool {
 	p.opLock.Lock()
 	defer p.opLock.Unlock()
 
