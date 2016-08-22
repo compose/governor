@@ -251,8 +251,6 @@ func (ha *SingleLeaderHA) Run() error {
 			}
 		}
 	}
-
-	return nil
 }
 
 func (ha *SingleLeaderHA) Stop() error {

@@ -219,7 +219,6 @@ func (f *fsm) run() error {
 			}
 		}
 	}
-	return nil
 }
 
 func (f *fsm) UniqueID() uint64 {
