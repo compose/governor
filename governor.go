@@ -15,9 +15,17 @@ import (
 )
 
 var configurationFile = flag.String("config", "./postgresql0.yml", "the yaml based configuration file.")
+var version string
+
+var outVersion = flag.Bool("version", false, "Output version info")
 
 func main() {
 	flag.Parse()
+
+	if *outVersion {
+		fmt.Printf("Governor: version - %s", version)
+		os.Exit(0)
+	}
 
 	log.WithFields(log.Fields{
 		"package": "governor",
