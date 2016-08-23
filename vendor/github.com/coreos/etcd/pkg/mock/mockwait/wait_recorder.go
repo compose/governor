@@ -41,7 +41,3 @@ func (w *waitRecorder) Register(id uint64) <-chan interface{} {
 func (w *waitRecorder) Trigger(id uint64, x interface{}) {
 	w.Record(testutil.Action{Name: "Trigger"})
 }
-
-func (w *waitRecorder) IsRegistered(id uint64) bool {
-	panic("waitRecorder.IsRegistered() shouldn't be called")
-}

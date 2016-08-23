@@ -24,7 +24,7 @@ func Main() {
 
 	if len(os.Args) > 1 {
 		switch os.Args[1] {
-		case "gateway", "grpc-proxy":
+		case "gateway":
 			if err := rootCmd.Execute(); err != nil {
 				fmt.Fprint(os.Stderr, err)
 				os.Exit(1)

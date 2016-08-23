@@ -25,7 +25,6 @@ var (
 	// Or the connection will time-out.
 	proberInterval           = ConnReadTimeout - time.Second
 	statusMonitoringInterval = 30 * time.Second
-	statusErrorInterval      = 5 * time.Second
 )
 
 func addPeerToProber(p probing.Prober, id string, us []string) {
@@ -45,16 +44,11 @@ func addPeerToProber(p probing.Prober, id string, us []string) {
 }
 
 func monitorProbingStatus(s probing.Status, id string) {
-	// set the first interval short to log error early.
-	interval := statusErrorInterval
 	for {
 		select {
-		case <-time.After(interval):
+		case <-time.After(statusMonitoringInterval):
 			if !s.Health() {
-				plog.Warningf("health check for peer %s could not connect: %v", id, s.Err())
-				interval = statusErrorInterval
-			} else {
-				interval = statusMonitoringInterval
+				plog.Warningf("health check for peer %s failed", id)
 			}
 			if s.ClockDiff() > time.Second {
 				plog.Warningf("the clock difference against peer %s is too high [%v > %v]", id, s.ClockDiff(), time.Second)

@@ -103,14 +103,9 @@ func NewRawNode(config *Config, peers []Peer) (*RawNode, error) {
 			r.addNode(peer.ID)
 		}
 	}
-
 	// Set the initial hard and soft states after performing all initialization.
 	rn.prevSoftSt = r.softState()
-	if lastIndex == 0 {
-		rn.prevHardSt = emptyState
-	} else {
-		rn.prevHardSt = r.hardState()
-	}
+	rn.prevHardSt = r.hardState()
 
 	return rn, nil
 }

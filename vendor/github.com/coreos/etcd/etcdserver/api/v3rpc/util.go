@@ -37,8 +37,6 @@ func togRPCError(err error) error {
 		return rpctypes.ErrGRPCRequestTooLarge
 	case etcdserver.ErrNoSpace:
 		return rpctypes.ErrGRPCNoSpace
-	case etcdserver.ErrTooManyRequests:
-		return rpctypes.ErrTooManyRequests
 
 	case auth.ErrRootUserNotExist:
 		return rpctypes.ErrGRPCRootUserNotExist
@@ -60,8 +58,6 @@ func togRPCError(err error) error {
 		return rpctypes.ErrGRPCRoleNotGranted
 	case auth.ErrPermissionNotGranted:
 		return rpctypes.ErrGRPCPermissionNotGranted
-	case auth.ErrAuthNotEnabled:
-		return rpctypes.ErrGRPCAuthNotEnabled
 	default:
 		return grpc.Errorf(codes.Internal, err.Error())
 	}

@@ -14,11 +14,7 @@
 
 package etcdmain
 
-import (
-	"strconv"
-
-	"github.com/coreos/etcd/embed"
-)
+import "strconv"
 
 var (
 	usageline = `usage: etcd [flags]
@@ -52,9 +48,9 @@ member flags:
 		list of URLs to listen on for peer traffic.
 	--listen-client-urls 'http://localhost:2379'
 		list of URLs to listen on for client traffic.
-	--max-snapshots '` + strconv.Itoa(embed.DefaultMaxSnapshots) + `'
+	--max-snapshots '` + strconv.Itoa(defaultMaxSnapshots) + `'
 		maximum number of snapshot files to retain (0 is unlimited).
-	--max-wals '` + strconv.Itoa(embed.DefaultMaxWALs) + `'
+	--max-wals '` + strconv.Itoa(defaultMaxWALs) + `'
 		maximum number of wal files to retain (0 is unlimited).
 	--cors ''
 		comma-separated whitelist of origins for CORS (cross-origin resource sharing).
@@ -150,6 +146,6 @@ given by the consensus protocol.
 	
 profiling flags:
 	--enable-pprof 'false'
-		Enable runtime profiling data via HTTP server. Address is at client URL + "/debug/pprof/"
+		Enable runtime profiling data via HTTP server. Address is at client URL + "/debug/pprof"
 `
 )

@@ -205,7 +205,6 @@ func (rn *Node) Start() error {
 	if rn.started {
 		return nil
 	}
-	rn.stopc = make(chan struct{})
 
 	if walEnabled {
 		rn.logger.Info("Initializing persistent storage")
@@ -333,19 +332,20 @@ func (rn *Node) Destroy() error {
 	}
 	rn.logger.Debug("Successfully removed self from canoe cluster")
 
-	close(rn.stopc)
-	rn.logger.Debug("Stopping raft transport layer")
-	rn.transport.Stop()
-	// TODO: Have a stopped chan for triggering this action
-	for rn.running {
-		time.Sleep(200 * time.Millisecond)
+	if rn.running {
+		close(rn.stopc)
+		rn.logger.Debug("Stopping raft transport layer")
+		rn.transport.Stop()
+		// TODO: Have a stopped chan for triggering this action
+		for rn.running {
+			time.Sleep(200 * time.Millisecond)
+		}
 	}
 
 	rn.logger.Debug("Deleting persistent data")
 	rn.deletePersistentData()
 	rn.logger.Debug("Successfully deleted persistent data")
 
-	rn.running = false
 	rn.started = false
 	rn.initialized = false
 	return nil
@@ -439,6 +439,7 @@ func nonInitNode(args *NodeConfig) (*Node, error) {
 		snapshotConfig:  args.SnapshotConfig,
 		dataDir:         args.DataDir,
 		logger:          args.Logger,
+		stopc:           make(chan struct{}),
 	}
 
 	if rn.id == 0 {

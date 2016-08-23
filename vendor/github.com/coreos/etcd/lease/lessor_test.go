@@ -26,8 +26,6 @@ import (
 	"github.com/coreos/etcd/mvcc/backend"
 )
 
-const minLeaseTTL = int64(5)
-
 // TestLessorGrant ensures Lessor can grant wanted lease.
 // The granted lease should have a unique ID with a term
 // that is greater than minLeaseTTL.
@@ -36,7 +34,7 @@ func TestLessorGrant(t *testing.T) {
 	defer os.RemoveAll(dir)
 	defer be.Close()
 
-	le := newLessor(be, minLeaseTTL)
+	le := newLessor(be)
 	le.Promote(0)
 
 	l, err := le.Grant(1, 1)
@@ -84,7 +82,7 @@ func TestLessorRevoke(t *testing.T) {
 
 	fd := &fakeDeleter{}
 
-	le := newLessor(be, minLeaseTTL)
+	le := newLessor(be)
 	le.SetRangeDeleter(fd)
 
 	// grant a lease with long term (100 seconds) to
@@ -131,10 +129,10 @@ func TestLessorRenew(t *testing.T) {
 	defer be.Close()
 	defer os.RemoveAll(dir)
 
-	le := newLessor(be, minLeaseTTL)
+	le := newLessor(be)
 	le.Promote(0)
 
-	l, err := le.Grant(1, minLeaseTTL)
+	l, err := le.Grant(1, 5)
 	if err != nil {
 		t.Fatalf("failed to grant lease (%v)", err)
 	}
@@ -162,7 +160,7 @@ func TestLessorDetach(t *testing.T) {
 
 	fd := &fakeDeleter{}
 
-	le := newLessor(be, minLeaseTTL)
+	le := newLessor(be)
 	le.SetRangeDeleter(fd)
 
 	// grant a lease with long term (100 seconds) to
@@ -201,7 +199,7 @@ func TestLessorRecover(t *testing.T) {
 	defer os.RemoveAll(dir)
 	defer be.Close()
 
-	le := newLessor(be, minLeaseTTL)
+	le := newLessor(be)
 	l1, err1 := le.Grant(1, 10)
 	l2, err2 := le.Grant(2, 20)
 	if err1 != nil || err2 != nil {
@@ -209,7 +207,7 @@ func TestLessorRecover(t *testing.T) {
 	}
 
 	// Create a new lessor with the same backend
-	nle := newLessor(be, minLeaseTTL)
+	nle := newLessor(be)
 	nl1 := nle.get(l1.ID)
 	if nl1 == nil || nl1.TTL != l1.TTL {
 		t.Errorf("nl1 = %v, want nl1.TTL= %d", nl1.TTL, l1.TTL)

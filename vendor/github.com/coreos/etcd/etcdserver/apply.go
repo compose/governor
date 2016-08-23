@@ -159,22 +159,6 @@ func (a *applierV3backend) Put(txnID int64, p *pb.PutRequest) (*pb.PutResponse, 
 		rev int64
 		err error
 	)
-
-	var rr *mvcc.RangeResult
-	if p.PrevKv {
-		if txnID != noTxn {
-			rr, err = a.s.KV().TxnRange(txnID, p.Key, nil, mvcc.RangeOptions{})
-			if err != nil {
-				return nil, err
-			}
-		} else {
-			rr, err = a.s.KV().Range(p.Key, nil, mvcc.RangeOptions{})
-			if err != nil {
-				return nil, err
-			}
-		}
-	}
-
 	if txnID != noTxn {
 		rev, err = a.s.KV().TxnPut(txnID, p.Key, p.Value, lease.LeaseID(p.Lease))
 		if err != nil {
@@ -190,9 +174,6 @@ func (a *applierV3backend) Put(txnID int64, p *pb.PutRequest) (*pb.PutResponse, 
 		rev = a.s.KV().Put(p.Key, p.Value, leaseID)
 	}
 	resp.Header.Revision = rev
-	if rr != nil && len(rr.KVs) != 0 {
-		resp.PrevKv = &rr.KVs[0]
-	}
 	return resp, nil
 }
 
@@ -210,21 +191,6 @@ func (a *applierV3backend) DeleteRange(txnID int64, dr *pb.DeleteRangeRequest) (
 		dr.RangeEnd = []byte{}
 	}
 
-	var rr *mvcc.RangeResult
-	if dr.PrevKv {
-		if txnID != noTxn {
-			rr, err = a.s.KV().TxnRange(txnID, dr.Key, dr.RangeEnd, mvcc.RangeOptions{})
-			if err != nil {
-				return nil, err
-			}
-		} else {
-			rr, err = a.s.KV().Range(dr.Key, dr.RangeEnd, mvcc.RangeOptions{})
-			if err != nil {
-				return nil, err
-			}
-		}
-	}
-
 	if txnID != noTxn {
 		n, rev, err = a.s.KV().TxnDeleteRange(txnID, dr.Key, dr.RangeEnd)
 		if err != nil {
@@ -235,11 +201,6 @@ func (a *applierV3backend) DeleteRange(txnID int64, dr *pb.DeleteRangeRequest) (
 	}
 
 	resp.Deleted = n
-	if rr != nil {
-		for i := range rr.KVs {
-			resp.PrevKvs = append(resp.PrevKvs, &rr.KVs[i])
-		}
-	}
 	resp.Header.Revision = rev
 	return resp, nil
 }
@@ -783,26 +744,4 @@ func compareInt64(a, b int64) int {
 // sending empty byte strings as nil; >= is encoded in the range end as '\0'.
 func isGteRange(rangeEnd []byte) bool {
 	return len(rangeEnd) == 1 && rangeEnd[0] == 0
-}
-
-func noSideEffect(r *pb.InternalRaftRequest) bool {
-	return r.Range != nil || r.AuthUserGet != nil || r.AuthRoleGet != nil
-}
-
-func removeNeedlessRangeReqs(txn *pb.TxnRequest) {
-	f := func(ops []*pb.RequestOp) []*pb.RequestOp {
-		j := 0
-		for i := 0; i < len(ops); i++ {
-			if _, ok := ops[i].Request.(*pb.RequestOp_RequestRange); ok {
-				continue
-			}
-			ops[j] = ops[i]
-			j++
-		}
-
-		return ops[:j]
-	}
-
-	txn.Success = f(txn.Success)
-	txn.Failure = f(txn.Failure)
 }

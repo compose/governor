@@ -66,6 +66,7 @@ func Start() {
 		command.NewWatchCommand(),
 		command.NewExecWatchCommand(),
 		command.NewMemberCommand(),
+		command.NewImportSnapCommand(),
 		command.NewUserCommands(),
 		command.NewRoleCommands(),
 		command.NewAuthCommands(),

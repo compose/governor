@@ -20,7 +20,6 @@ package auth
 import (
 	"crypto/rand"
 	"math/big"
-	"strings"
 )
 
 const (
@@ -53,15 +52,4 @@ func (as *authStore) assignSimpleTokenToUser(username, token string) {
 
 	as.simpleTokens[token] = username
 	as.simpleTokensMu.Unlock()
-}
-
-func (as *authStore) invalidateUser(username string) {
-	as.simpleTokensMu.Lock()
-	defer as.simpleTokensMu.Unlock()
-
-	for token, name := range as.simpleTokens {
-		if strings.Compare(name, username) == 0 {
-			delete(as.simpleTokens, token)
-		}
-	}
 }

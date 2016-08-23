@@ -46,8 +46,6 @@ var (
 
 	cpuProfPath string
 	memProfPath string
-
-	user string
 )
 
 func init() {
@@ -59,6 +57,4 @@ func init() {
 	RootCmd.PersistentFlags().StringVar(&tls.CertFile, "cert", "", "identify HTTPS client using this SSL certificate file")
 	RootCmd.PersistentFlags().StringVar(&tls.KeyFile, "key", "", "identify HTTPS client using this SSL key file")
 	RootCmd.PersistentFlags().StringVar(&tls.CAFile, "cacert", "", "verify certificates of HTTPS-enabled servers using this CA bundle")
-
-	RootCmd.PersistentFlags().StringVar(&user, "user", "", "specify username and password in username:password format")
 }

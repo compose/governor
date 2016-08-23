@@ -243,7 +243,7 @@ func (d *discovery) checkCluster() ([]*client.Node, int, uint64, error) {
 		}
 		return nil, 0, 0, err
 	}
-	var nodes []*client.Node
+	nodes := make([]*client.Node, 0)
 	// append non-config keys to nodes
 	for _, n := range resp.Node.Nodes {
 		if !(path.Base(n.Key) == path.Base(configKey)) {

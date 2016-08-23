@@ -15,7 +15,6 @@
 package cache
 
 import (
-	"errors"
 	"sync"
 
 	"github.com/coreos/etcd/etcdserver/api/v3rpc/rpctypes"
@@ -46,8 +45,7 @@ func keyFunc(req *pb.RangeRequest) string {
 
 func NewCache(maxCacheEntries int) Cache {
 	return &cache{
-		lru:          lru.New(maxCacheEntries),
-		compactedRev: -1,
+		lru: lru.New(maxCacheEntries),
 	}
 }
 
@@ -78,7 +76,7 @@ func (c *cache) Get(req *pb.RangeRequest) (*pb.RangeResponse, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	if req.Revision < c.compactedRev {
+	if req.Revision > c.compactedRev {
 		c.lru.Remove(key)
 		return nil, ErrCompacted
 	}
@@ -86,7 +84,7 @@ func (c *cache) Get(req *pb.RangeRequest) (*pb.RangeResponse, error) {
 	if resp, ok := c.lru.Get(key); ok {
 		return resp.(*pb.RangeResponse), nil
 	}
-	return nil, errors.New("not exist")
+	return nil, nil
 }
 
 // Compact invalidate all caching response before the given rev.

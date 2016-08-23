@@ -20,11 +20,14 @@ import (
 	"time"
 
 	"github.com/coreos/etcd/etcdserver"
+	"github.com/coreos/etcd/pkg/testutil"
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
 )
 
 func TestDialTimeout(t *testing.T) {
+	defer testutil.AfterTest(t)
+
 	donec := make(chan error)
 	go func() {
 		// without timeout, grpc keeps redialing if connection refused
@@ -54,6 +57,15 @@ func TestDialTimeout(t *testing.T) {
 			t.Errorf("unexpected error %v, want %v", err, grpc.ErrClientConnTimeout)
 		}
 	}
+}
+
+func TestDialNoTimeout(t *testing.T) {
+	cfg := Config{Endpoints: []string{"127.0.0.1:12345"}}
+	c, err := New(cfg)
+	if c == nil || err != nil {
+		t.Fatalf("new client with DialNoWait should succeed, got %v", err)
+	}
+	c.Close()
 }
 
 func TestIsHaltErr(t *testing.T) {

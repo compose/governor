@@ -108,9 +108,6 @@ type simplePrinter struct {
 
 func (s *simplePrinter) Del(resp v3.DeleteResponse) {
 	fmt.Println(resp.Deleted)
-	for _, kv := range resp.PrevKvs {
-		printKV(s.isHex, kv)
-	}
 }
 
 func (s *simplePrinter) Get(resp v3.GetResponse) {
@@ -119,12 +116,7 @@ func (s *simplePrinter) Get(resp v3.GetResponse) {
 	}
 }
 
-func (s *simplePrinter) Put(r v3.PutResponse) {
-	fmt.Println("OK")
-	if r.PrevKv != nil {
-		printKV(s.isHex, r.PrevKv)
-	}
-}
+func (s *simplePrinter) Put(r v3.PutResponse) { fmt.Println("OK") }
 
 func (s *simplePrinter) Txn(resp v3.TxnResponse) {
 	if resp.Succeeded {
@@ -151,9 +143,6 @@ func (s *simplePrinter) Txn(resp v3.TxnResponse) {
 func (s *simplePrinter) Watch(resp v3.WatchResponse) {
 	for _, e := range resp.Events {
 		fmt.Println(e.Type)
-		if e.PrevKv != nil {
-			printKV(s.isHex, e.PrevKv)
-		}
 		printKV(s.isHex, e.Kv)
 	}
 }

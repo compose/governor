@@ -46,12 +46,9 @@ func updatedirCommandFunc(c *cli.Context, ki client.KeysAPI) {
 	key := c.Args()[0]
 	ttl := c.Int("ttl")
 	ctx, cancel := contextWithTotalTimeout(c)
-	resp, err := ki.Set(ctx, key, "", &client.SetOptions{TTL: time.Duration(ttl) * time.Second, Dir: true, PrevExist: client.PrevExist})
+	_, err := ki.Set(ctx, key, "", &client.SetOptions{TTL: time.Duration(ttl) * time.Second, Dir: true, PrevExist: client.PrevExist})
 	cancel()
 	if err != nil {
 		handleError(ExitServerError, err)
-	}
-	if c.GlobalString("output") != "simple" {
-		printResponseKey(resp, c.GlobalString("output"))
 	}
 }

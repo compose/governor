@@ -33,11 +33,9 @@ var (
 // Also doesn't do any lookups for the token (though it could)
 // Also sees each entry as a separate instance.
 func SRVGetCluster(name, dns string, defaultToken string, apurls types.URLs) (string, string, error) {
-	var (
-		stringParts []string
-		tcpAPUrls   []string
-	)
+	stringParts := make([]string, 0)
 	tempName := int(0)
+	tcpAPUrls := make([]string, 0)
 
 	// First, resolve the apurls
 	for _, url := range apurls {
@@ -70,7 +68,7 @@ func SRVGetCluster(name, dns string, defaultToken string, apurls types.URLs) (st
 			}
 			if n == "" {
 				n = fmt.Sprintf("%d", tempName)
-				tempName++
+				tempName += 1
 			}
 			stringParts = append(stringParts, fmt.Sprintf("%s=%s%s", n, prefix, host))
 			plog.Noticef("got bootstrap from DNS for %s at %s%s", service, prefix, host)
@@ -83,12 +81,12 @@ func SRVGetCluster(name, dns string, defaultToken string, apurls types.URLs) (st
 	srvErr := make([]string, 2)
 	if err != nil {
 		srvErr[0] = fmt.Sprintf("error querying DNS SRV records for _etcd-server-ssl %s", err)
-		failCount++
+		failCount += 1
 	}
 	err = updateNodeMap("etcd-server", "http://")
 	if err != nil {
 		srvErr[1] = fmt.Sprintf("error querying DNS SRV records for _etcd-server %s", err)
-		failCount++
+		failCount += 1
 	}
 	if failCount == 2 {
 		plog.Warningf(srvErr[0])

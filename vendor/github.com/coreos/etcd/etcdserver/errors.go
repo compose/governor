@@ -31,7 +31,6 @@ var (
 	ErrRequestTooLarge            = errors.New("etcdserver: request is too large")
 	ErrNoSpace                    = errors.New("etcdserver: no space")
 	ErrInvalidAuthToken           = errors.New("etcdserver: invalid auth token")
-	ErrTooManyRequests            = errors.New("etcdserver: too many requests")
 )
 
 type DiscoveryError struct {

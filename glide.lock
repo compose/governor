@@ -1,16 +1,16 @@
 hash: de8f5ccd4b5a448a8a9afab2d55f471d1ee97636d7ac84a710401e929c7a85b2
-updated: 2016-08-02T16:17:46.269519904-07:00
+updated: 2016-08-23T15:06:27.964587093-07:00
 imports:
 - name: github.com/beorn7/perks
-  version: 696fba2acf977d2f2b306a343a6afaab737613c9
+  version: 4c0e84591b9aa9e6dcfdf3e020114cd81f89d5f9
   subpackages:
   - quantile
 - name: github.com/cenk/backoff
-  version: ""
+  version: 32cd0c5b3aef12c76ed64aaf678f6c79736be7dc
 - name: github.com/compose/canoe
-  version: 8aaa9ebbcf517ed649bebcc1c0e42e06667dc4b0
+  version: 5c150b21798876de5e25c13ec127efc7bc07f6d6
 - name: github.com/coreos/etcd
-  version: ""
+  version: 9efa00d1030d4bf62eb8e5ec130023aeb1b8e2d0
   subpackages:
   - etcdserver/stats
   - pkg/types
@@ -31,69 +31,77 @@ imports:
   - pkg/crc
   - pkg/tlsutil
 - name: github.com/coreos/go-semver
-  version: 696fba2acf977d2f2b306a343a6afaab737613c9
+  version: 8ab6407b697782a06568d4b7f1db25550ec2e4c6
   subpackages:
   - semver
 - name: github.com/coreos/go-systemd
-  version: 696fba2acf977d2f2b306a343a6afaab737613c9
+  version: 1cbd13e6f7d8111361c53fea131a2e5e0a175cac
   subpackages:
   - journal
 - name: github.com/coreos/pkg
-  version: 696fba2acf977d2f2b306a343a6afaab737613c9
+  version: 3ac0863d7acf3bc44daf49afef8919af12f704ef
   subpackages:
   - capnslog
-- name: github.com/gogo/protobuf
-  version: 696fba2acf977d2f2b306a343a6afaab737613c9
-  subpackages:
-  - proto
 - name: github.com/golang/protobuf
-  version: 696fba2acf977d2f2b306a343a6afaab737613c9
+  version: 888eb0692c857ec880338addf316bd662d5e630e
   subpackages:
   - proto
 - name: github.com/gorilla/context
-  version: 696fba2acf977d2f2b306a343a6afaab737613c9
+  version: 08b5f424b9271eedf6f9f0ce86cb9396ed337a42
 - name: github.com/gorilla/mux
-  version: ""
+  version: 0eeaf8392f5b04950925b8a69fe70f110fa7cbfc
 - name: github.com/lib/pq
-  version: 696fba2acf977d2f2b306a343a6afaab737613c9
+  version: 80f8150043c80fb52dee6bc863a709cdac7ec8f8
   subpackages:
   - oid
 - name: github.com/matttproud/golang_protobuf_extensions
-  version: 696fba2acf977d2f2b306a343a6afaab737613c9
+  version: c12348ce28de40eed0136aa2b644d0ee0650e56c
   subpackages:
   - pbutil
 - name: github.com/pkg/errors
-  version: 696fba2acf977d2f2b306a343a6afaab737613c9
+  version: 17b591df37844cde689f4d5813e5cea0927d8dd2
 - name: github.com/prometheus/client_golang
-  version: 696fba2acf977d2f2b306a343a6afaab737613c9
+  version: c5b7fccd204277076155f10851dad72b76a49317
   subpackages:
   - prometheus
 - name: github.com/prometheus/client_model
-  version: 696fba2acf977d2f2b306a343a6afaab737613c9
+  version: fa8ad6fec33561be4280a8f0514318c79d7f6cb6
   subpackages:
   - go
 - name: github.com/prometheus/common
-  version: 696fba2acf977d2f2b306a343a6afaab737613c9
+  version: ebdfc6da46522d58825777cf1f90490a5b1ef1d8
   subpackages:
   - expfmt
-  - internal/bitbucket.org/ww/goautoneg
   - model
+  - internal/bitbucket.org/ww/goautoneg
 - name: github.com/prometheus/procfs
-  version: 696fba2acf977d2f2b306a343a6afaab737613c9
+  version: abf152e5f3e97f2fafac028d2cc06c1feb87ffa5
 - name: github.com/satori/go.uuid
-  version: ""
+  version: 879c5887cd475cd7864858769793b2ceb0d44feb
 - name: github.com/Sirupsen/logrus
-  version: 696fba2acf977d2f2b306a343a6afaab737613c9
+  version: 08a8a7c27e3d058a8989316a850daad1c10bf4ab
 - name: github.com/xiang90/probing
-  version: 696fba2acf977d2f2b306a343a6afaab737613c9
+  version: 07dd2e8dfe18522e9c447ba95f2fe95262f63bb2
 - name: golang.org/x/net
-  version: 696fba2acf977d2f2b306a343a6afaab737613c9
+  version: 7394c112eae4dba7e96bfcfe738e6373d61772b4
   subpackages:
   - context
 - name: golang.org/x/sys
-  version: 696fba2acf977d2f2b306a343a6afaab737613c9
+  version: a646d33e2ee3172a661fc09bca23bb4889a41bc8
   subpackages:
   - unix
 - name: gopkg.in/yaml.v2
-  version: 696fba2acf977d2f2b306a343a6afaab737613c9
-testImports: []
+  version: e4d366fc3c7938e2958e662b4258c7a89e1f0e3e
+testImports:
+- name: github.com/davecgh/go-spew
+  version: 6cf5744a041a0022271cefed95ba843f6d87fd51
+  subpackages:
+  - spew
+- name: github.com/pmezard/go-difflib
+  version: 792786c7400a136282c1664665ae0a8db921c6c2
+  subpackages:
+  - difflib
+- name: github.com/stretchr/testify
+  version: d77da356e56a7428ad25149ca77381849a6a5232
+  subpackages:
+  - assert

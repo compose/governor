@@ -71,7 +71,6 @@ func newGatewayStartCommand() *cobra.Command {
 	cmd.Flags().StringVar(&gatewayCA, "trusted-ca-file", "", "path to the client server TLS CA file.")
 
 	cmd.Flags().StringSliceVar(&gatewayEndpoints, "endpoints", []string{"127.0.0.1:2379"}, "comma separated etcd cluster endpoints")
-
 	cmd.Flags().DurationVar(&getewayRetryDelay, "retry-delay", time.Minute, "duration of delay before retrying failed endpoints")
 
 	return &cmd
@@ -113,7 +112,7 @@ func startGateway(cmd *cobra.Command, args []string) {
 
 	tp := tcpproxy.TCPProxy{
 		Listener:        l,
-		Endpoints:       endpoints,
+		Endpoints:       gatewayEndpoints,
 		MonitorInterval: getewayRetryDelay,
 	}
 

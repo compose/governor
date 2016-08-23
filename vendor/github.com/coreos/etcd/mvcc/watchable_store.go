@@ -35,7 +35,7 @@ const (
 )
 
 type watchable interface {
-	watch(key, end []byte, startRev int64, id WatchID, ch chan<- WatchResponse, fcs ...FilterFunc) (*watcher, cancelFunc)
+	watch(key, end []byte, startRev int64, id WatchID, ch chan<- WatchResponse) (*watcher, cancelFunc)
 	progress(w *watcher)
 	rev() int64
 }
@@ -185,7 +185,7 @@ func (s *watchableStore) NewWatchStream() WatchStream {
 	}
 }
 
-func (s *watchableStore) watch(key, end []byte, startRev int64, id WatchID, ch chan<- WatchResponse, fcs ...FilterFunc) (*watcher, cancelFunc) {
+func (s *watchableStore) watch(key, end []byte, startRev int64, id WatchID, ch chan<- WatchResponse) (*watcher, cancelFunc) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -195,7 +195,6 @@ func (s *watchableStore) watch(key, end []byte, startRev int64, id WatchID, ch c
 		minRev: startRev,
 		id:     id,
 		ch:     ch,
-		fcs:    fcs,
 	}
 
 	s.store.mu.Lock()
@@ -326,9 +325,10 @@ func (s *watchableStore) moveVictims() (moved int) {
 		for w, eb := range wb {
 			// watcher has observed the store up to, but not including, w.minRev
 			rev := w.minRev - 1
-			if w.send(WatchResponse{WatchID: w.id, Events: eb.evs, Revision: rev}) {
+			select {
+			case w.ch <- WatchResponse{WatchID: w.id, Events: eb.evs, Revision: rev}:
 				pendingEventsGauge.Add(float64(len(eb.evs)))
-			} else {
+			default:
 				if newVictim == nil {
 					newVictim = make(watcherBatch)
 				}
@@ -419,9 +419,10 @@ func (s *watchableStore) syncWatchers() {
 			w.minRev = eb.moreRev
 		}
 
-		if w.send(WatchResponse{WatchID: w.id, Events: eb.evs, Revision: curRev}) {
+		select {
+		case w.ch <- WatchResponse{WatchID: w.id, Events: eb.evs, Revision: curRev}:
 			pendingEventsGauge.Add(float64(len(eb.evs)))
-		} else {
+		default:
 			if victims == nil {
 				victims = make(watcherBatch)
 			}
@@ -479,10 +480,10 @@ func (s *watchableStore) notify(rev int64, evs []mvccpb.Event) {
 		if eb.revs != 1 {
 			plog.Panicf("unexpected multiple revisions in notification")
 		}
-
-		if w.send(WatchResponse{WatchID: w.id, Events: eb.evs, Revision: rev}) {
+		select {
+		case w.ch <- WatchResponse{WatchID: w.id, Events: eb.evs, Revision: rev}:
 			pendingEventsGauge.Add(float64(len(eb.evs)))
-		} else {
+		default:
 			// move slow watcher to victims
 			w.minRev = rev + 1
 			if victim == nil {
@@ -515,9 +516,12 @@ func (s *watchableStore) progress(w *watcher) {
 	defer s.mu.Unlock()
 
 	if _, ok := s.synced.watchers[w]; ok {
-		w.send(WatchResponse{WatchID: w.id, Revision: s.rev()})
-		// If the ch is full, this watcher is receiving events.
-		// We do not need to send progress at all.
+		select {
+		case w.ch <- WatchResponse{WatchID: w.id, Revision: s.rev()}:
+		default:
+			// If the ch is full, this watcher is receiving events.
+			// We do not need to send progress at all.
+		}
 	}
 }
 
@@ -538,40 +542,7 @@ type watcher struct {
 	minRev int64
 	id     WatchID
 
-	fcs []FilterFunc
 	// a chan to send out the watch response.
 	// The chan might be shared with other watchers.
 	ch chan<- WatchResponse
-}
-
-func (w *watcher) send(wr WatchResponse) bool {
-	progressEvent := len(wr.Events) == 0
-
-	if len(w.fcs) != 0 {
-		ne := make([]mvccpb.Event, 0, len(wr.Events))
-		for i := range wr.Events {
-			filtered := false
-			for _, filter := range w.fcs {
-				if filter(wr.Events[i]) {
-					filtered = true
-					break
-				}
-			}
-			if !filtered {
-				ne = append(ne, wr.Events[i])
-			}
-		}
-		wr.Events = ne
-	}
-
-	// if all events are filtered out, we should send nothing.
-	if !progressEvent && len(wr.Events) == 0 {
-		return true
-	}
-	select {
-	case w.ch <- wr:
-		return true
-	default:
-		return false
-	}
 }

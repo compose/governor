@@ -53,18 +53,12 @@ func TestRawNodeProposeAndConfChange(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	rd := rawNode.Ready()
-	s.Append(rd.Entries)
-	rawNode.Advance(rd)
-
 	rawNode.Campaign()
 	proposed := false
-	var (
-		lastIndex uint64
-		ccdata    []byte
-	)
+	var lastIndex uint64
+	var ccdata []byte
 	for {
-		rd = rawNode.Ready()
+		rd := rawNode.Ready()
 		s.Append(rd.Entries)
 		// Once we are the leader, propose a command and a ConfChange.
 		if !proposed && rd.SoftState.Lead == rawNode.raft.id {
@@ -130,12 +124,15 @@ func TestRawNodeStart(t *testing.T) {
 	}
 	wants := []Ready{
 		{
-			HardState: raftpb.HardState{Term: 1, Commit: 1, Vote: 0},
+			SoftState: &SoftState{Lead: 1, RaftState: StateLeader},
+			HardState: raftpb.HardState{Term: 2, Commit: 2, Vote: 1},
 			Entries: []raftpb.Entry{
 				{Type: raftpb.EntryConfChange, Term: 1, Index: 1, Data: ccdata},
+				{Term: 2, Index: 2},
 			},
 			CommittedEntries: []raftpb.Entry{
 				{Type: raftpb.EntryConfChange, Term: 1, Index: 1, Data: ccdata},
+				{Term: 2, Index: 2},
 			},
 		},
 		{
@@ -150,6 +147,7 @@ func TestRawNodeStart(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	rawNode.Campaign()
 	rd := rawNode.Ready()
 	t.Logf("rd %v", rd)
 	if !reflect.DeepEqual(rd, wants[0]) {
@@ -158,13 +156,6 @@ func TestRawNodeStart(t *testing.T) {
 		storage.Append(rd.Entries)
 		rawNode.Advance(rd)
 	}
-	storage.Append(rd.Entries)
-	rawNode.Advance(rd)
-
-	rawNode.Campaign()
-	rd = rawNode.Ready()
-	storage.Append(rd.Entries)
-	rawNode.Advance(rd)
 
 	rawNode.Propose([]byte("foo"))
 	if rd = rawNode.Ready(); !reflect.DeepEqual(rd, wants[1]) {

@@ -993,15 +993,6 @@
       ],
       "default": "KEY"
     },
-    "WatchCreateRequestFilterType": {
-      "type": "string",
-      "enum": [
-        "NOPUT",
-        "NODELETE"
-      ],
-      "default": "NOPUT",
-      "description": "- NOPUT: filter out put event.\n - NODELETE: filter out delete event."
-    },
     "authpbPermission": {
       "type": "object",
       "properties": {
@@ -1483,11 +1474,6 @@
           "format": "byte",
           "description": "key is the first key to delete in the range."
         },
-        "prev_kv": {
-          "type": "boolean",
-          "format": "boolean",
-          "description": "If prev_kv is set, etcd gets the previous key-value pairs before deleting it.\nThe previous key-value pairs will be returned in the delte response."
-        },
         "range_end": {
           "type": "string",
           "format": "byte",
@@ -1505,13 +1491,6 @@
         },
         "header": {
           "$ref": "#/definitions/etcdserverpbResponseHeader"
-        },
-        "prev_kvs": {
-          "type": "array",
-          "items": {
-            "$ref": "#/definitions/mvccpbKeyValue"
-          },
-          "description": "if prev_kv is set in the request, the previous key-value pairs will be returned."
         }
       }
     },
@@ -1745,11 +1724,6 @@
           "format": "int64",
           "description": "lease is the lease ID to associate with the key in the key-value store. A lease\nvalue of 0 indicates no lease."
         },
-        "prev_kv": {
-          "type": "boolean",
-          "format": "boolean",
-          "description": "If prev_kv is set, etcd gets the previous key-value pair before changing it.\nThe previous key-value pair will be returned in the put response."
-        },
         "value": {
           "type": "string",
           "format": "byte",
@@ -1762,10 +1736,6 @@
       "properties": {
         "header": {
           "$ref": "#/definitions/etcdserverpbResponseHeader"
-        },
-        "prev_kv": {
-          "$ref": "#/definitions/mvccpbKeyValue",
-          "description": "if prev_kv is set in the request, the previous key-value pair will be returned."
         }
       }
     },
@@ -2013,22 +1983,10 @@
     "etcdserverpbWatchCreateRequest": {
       "type": "object",
       "properties": {
-        "filters": {
-          "type": "array",
-          "items": {
-            "$ref": "#/definitions/WatchCreateRequestFilterType"
-          },
-          "description": "filters filter the events at server side before it sends back to the watcher."
-        },
         "key": {
           "type": "string",
           "format": "byte",
           "description": "key is the key to register for watching."
-        },
-        "prev_kv": {
-          "type": "boolean",
-          "format": "boolean",
-          "description": "If prev_kv is set, created watcher gets the previous KV before the event happens.\nIf the previous KV is already compacted, nothing will be returned."
         },
         "progress_notify": {
           "type": "boolean",
@@ -2098,10 +2056,6 @@
         "kv": {
           "$ref": "#/definitions/mvccpbKeyValue",
           "description": "kv holds the KeyValue for the event.\nA PUT event contains current kv pair.\nA PUT event with kv.Version=1 indicates the creation of a key.\nA DELETE/EXPIRE event contains the deleted key with\nits modification revision set to the revision of deletion."
-        },
-        "prev_kv": {
-          "$ref": "#/definitions/mvccpbKeyValue",
-          "description": "prev_kv holds the key-value pair before the event happens."
         },
         "type": {
           "$ref": "#/definitions/EventEventType",

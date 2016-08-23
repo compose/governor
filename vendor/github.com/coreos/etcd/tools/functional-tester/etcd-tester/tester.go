@@ -41,15 +41,80 @@ func (tt *tester) runLoop() {
 		tt.status.Failures = append(tt.status.Failures, f.Desc())
 	}
 
-	var prevCompactRev int64
-	for round := 0; round < tt.limit || tt.limit == -1; round++ {
+	var (
+		round          int
+		prevCompactRev int64
+	)
+	for {
 		tt.status.setRound(round)
+		tt.status.setCase(-1) // -1 so that logPrefix doesn't print out 'case'
 		roundTotalCounter.Inc()
 
-		if ok, err := tt.doRound(round); !ok {
-			if err != nil || tt.cleanup() != nil {
+		var failed bool
+		for j, f := range tt.failures {
+			caseTotalCounter.WithLabelValues(f.Desc()).Inc()
+			tt.status.setCase(j)
+
+			if err := tt.cluster.WaitHealth(); err != nil {
+				plog.Printf("%s wait full health error: %v", tt.logPrefix(), err)
+				if err := tt.cleanup(); err != nil {
+					return
+				}
+				failed = true
+				break
+			}
+
+			plog.Printf("%s injecting failure %q", tt.logPrefix(), f.Desc())
+			if err := f.Inject(tt.cluster, round); err != nil {
+				plog.Printf("%s injection error: %v", tt.logPrefix(), err)
+				if err := tt.cleanup(); err != nil {
+					return
+				}
+				failed = true
+				break
+			}
+			plog.Printf("%s injected failure", tt.logPrefix())
+
+			plog.Printf("%s recovering failure %q", tt.logPrefix(), f.Desc())
+			if err := f.Recover(tt.cluster, round); err != nil {
+				plog.Printf("%s recovery error: %v", tt.logPrefix(), err)
+				if err := tt.cleanup(); err != nil {
+					return
+				}
+				failed = true
+				break
+			}
+			plog.Printf("%s recovered failure", tt.logPrefix())
+
+			if tt.cluster.v2Only {
+				plog.Printf("%s succeed!", tt.logPrefix())
+				continue
+			}
+
+			if !tt.consistencyCheck {
+				if err := tt.updateRevision(); err != nil {
+					plog.Warningf("%s functional-tester returning with tt.updateRevision error (%v)", tt.logPrefix(), err)
+					return
+				}
+				continue
+			}
+
+			var err error
+			failed, err = tt.checkConsistency()
+			if err != nil {
+				plog.Warningf("%s functional-tester returning with tt.checkConsistency error (%v)", tt.logPrefix(), err)
 				return
 			}
+			if failed {
+				break
+			}
+			plog.Printf("%s succeed!", tt.logPrefix())
+		}
+
+		// -1 so that logPrefix doesn't print out 'case'
+		tt.status.setCase(-1)
+
+		if failed {
 			continue
 		}
 
@@ -74,62 +139,13 @@ func (tt *tester) runLoop() {
 				return
 			}
 		}
+
+		round++
+		if round == tt.limit {
+			plog.Printf("%s functional-tester is finished", tt.logPrefix())
+			break
+		}
 	}
-
-	plog.Printf("%s functional-tester is finished", tt.logPrefix())
-}
-
-func (tt *tester) doRound(round int) (bool, error) {
-	// -1 so that logPrefix doesn't print out 'case'
-	defer tt.status.setCase(-1)
-
-	for j, f := range tt.failures {
-		caseTotalCounter.WithLabelValues(f.Desc()).Inc()
-		tt.status.setCase(j)
-
-		if err := tt.cluster.WaitHealth(); err != nil {
-			plog.Printf("%s wait full health error: %v", tt.logPrefix(), err)
-			return false, nil
-		}
-
-		plog.Printf("%s injecting failure %q", tt.logPrefix(), f.Desc())
-		if err := f.Inject(tt.cluster, round); err != nil {
-			plog.Printf("%s injection error: %v", tt.logPrefix(), err)
-			return false, nil
-		}
-		plog.Printf("%s injected failure", tt.logPrefix())
-
-		plog.Printf("%s recovering failure %q", tt.logPrefix(), f.Desc())
-		if err := f.Recover(tt.cluster, round); err != nil {
-			plog.Printf("%s recovery error: %v", tt.logPrefix(), err)
-			return false, nil
-		}
-		plog.Printf("%s recovered failure", tt.logPrefix())
-
-		if tt.cluster.v2Only {
-			plog.Printf("%s succeed!", tt.logPrefix())
-			continue
-		}
-
-		if !tt.consistencyCheck {
-			if err := tt.updateRevision(); err != nil {
-				plog.Warningf("%s functional-tester returning with tt.updateRevision error (%v)", tt.logPrefix(), err)
-				return false, err
-			}
-			continue
-		}
-
-		failed, err := tt.checkConsistency()
-		if err != nil {
-			plog.Warningf("%s functional-tester returning with tt.checkConsistency error (%v)", tt.logPrefix(), err)
-			return false, err
-		}
-		if failed {
-			return false, nil
-		}
-		plog.Printf("%s succeed!", tt.logPrefix())
-	}
-	return true, nil
 }
 
 func (tt *tester) updateRevision() error {
@@ -143,25 +159,21 @@ func (tt *tester) updateRevision() error {
 
 func (tt *tester) checkConsistency() (failed bool, err error) {
 	tt.cancelStressers()
-	defer func() {
-		serr := tt.startStressers()
-		if err == nil {
-			err = serr
-		}
-	}()
+	defer tt.startStressers()
 
 	plog.Printf("%s updating current revisions...", tt.logPrefix())
 	var (
 		revs   map[string]int64
 		hashes map[string]int64
+		rerr   error
 		ok     bool
 	)
 	for i := 0; i < 7; i++ {
 		time.Sleep(time.Second)
 
-		revs, hashes, err = tt.cluster.getRevisionHash()
-		if err != nil {
-			plog.Printf("%s #%d failed to get current revisions (%v)", tt.logPrefix(), i, err)
+		revs, hashes, rerr = tt.cluster.getRevisionHash()
+		if rerr != nil {
+			plog.Printf("%s #%d failed to get current revisions (%v)", tt.logPrefix(), i, rerr)
 			continue
 		}
 		if tt.currentRevision, ok = getSameValue(revs); ok {
@@ -172,9 +184,10 @@ func (tt *tester) checkConsistency() (failed bool, err error) {
 	}
 	plog.Printf("%s updated current revisions with %d", tt.logPrefix(), tt.currentRevision)
 
-	if !ok || err != nil {
+	if !ok || rerr != nil {
 		plog.Printf("%s checking current revisions failed [revisions: %v]", tt.logPrefix(), revs)
 		failed = true
+		err = tt.cleanup()
 		return
 	}
 	plog.Printf("%s all members are consistent with current revisions [revisions: %v]", tt.logPrefix(), revs)
@@ -183,29 +196,22 @@ func (tt *tester) checkConsistency() (failed bool, err error) {
 	if _, ok = getSameValue(hashes); !ok {
 		plog.Printf("%s checking current storage hashes failed [hashes: %v]", tt.logPrefix(), hashes)
 		failed = true
+		err = tt.cleanup()
 		return
 	}
 	plog.Printf("%s all members are consistent with storage hashes", tt.logPrefix())
 	return
 }
 
-func (tt *tester) compact(rev int64, timeout time.Duration) (err error) {
-	tt.cancelStressers()
-	defer func() {
-		serr := tt.startStressers()
-		if err == nil {
-			err = serr
-		}
-	}()
-
+func (tt *tester) compact(rev int64, timeout time.Duration) error {
 	plog.Printf("%s compacting storage (current revision %d, compact revision %d)", tt.logPrefix(), tt.currentRevision, rev)
-	if err = tt.cluster.compactKV(rev, timeout); err != nil {
+	if err := tt.cluster.compactKV(rev, timeout); err != nil {
 		return err
 	}
 	plog.Printf("%s compacted storage (compact revision %d)", tt.logPrefix(), rev)
 
 	plog.Printf("%s checking compaction (compact revision %d)", tt.logPrefix(), rev)
-	if err = tt.cluster.checkCompact(rev); err != nil {
+	if err := tt.cluster.checkCompact(rev); err != nil {
 		plog.Warningf("%s checkCompact error (%v)", tt.logPrefix(), err)
 		return err
 	}
@@ -254,7 +260,7 @@ func (tt *tester) cleanup() error {
 		return err
 	}
 
-	if err := tt.cluster.Reset(); err != nil {
+	if err := tt.cluster.Bootstrap(); err != nil {
 		plog.Warningf("%s cleanup Bootstrap error: %v", tt.logPrefix(), err)
 		return err
 	}
@@ -270,13 +276,10 @@ func (tt *tester) cancelStressers() {
 	plog.Printf("%s canceled stressers", tt.logPrefix())
 }
 
-func (tt *tester) startStressers() error {
+func (tt *tester) startStressers() {
 	plog.Printf("%s starting the stressers...", tt.logPrefix())
 	for _, s := range tt.cluster.Stressers {
-		if err := s.Stress(); err != nil {
-			return err
-		}
+		go s.Stress()
 	}
 	plog.Printf("%s started stressers", tt.logPrefix())
-	return nil
 }

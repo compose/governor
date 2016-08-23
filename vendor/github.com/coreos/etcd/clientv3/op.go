@@ -14,7 +14,9 @@
 
 package clientv3
 
-import pb "github.com/coreos/etcd/etcdserver/etcdserverpb"
+import (
+	pb "github.com/coreos/etcd/etcdserver/etcdserverpb"
+)
 
 type opType int
 
@@ -45,16 +47,8 @@ type Op struct {
 	// for range, watch
 	rev int64
 
-	// for watch, put, delete
-	prevKV bool
-
 	// progressNotify is for progress updates.
 	progressNotify bool
-	// createdNotify is for created event
-	createdNotify bool
-	// filters for watchers
-	filterPut    bool
-	filterDelete bool
 
 	// for put
 	val     []byte
@@ -79,11 +73,10 @@ func (op Op) toRequestOp() *pb.RequestOp {
 		}
 		return &pb.RequestOp{Request: &pb.RequestOp_RequestRange{RequestRange: r}}
 	case tPut:
-		r := &pb.PutRequest{Key: op.key, Value: op.val, Lease: int64(op.leaseID), PrevKv: op.prevKV}
+		r := &pb.PutRequest{Key: op.key, Value: op.val, Lease: int64(op.leaseID)}
 		return &pb.RequestOp{Request: &pb.RequestOp_RequestPut{RequestPut: r}}
 	case tDeleteRange:
-		r := &pb.DeleteRangeRequest{Key: op.key, RangeEnd: op.end, PrevKv: op.prevKV}
-
+		r := &pb.DeleteRangeRequest{Key: op.key, RangeEnd: op.end}
 		return &pb.RequestOp{Request: &pb.RequestOp_RequestDeleteRange{RequestDeleteRange: r}}
 	default:
 		panic("Unknown Op")
@@ -116,10 +109,6 @@ func OpDelete(key string, opts ...OpOption) Op {
 		panic("unexpected serializable in delete")
 	case ret.countOnly:
 		panic("unexpected countOnly in delete")
-	case ret.filterDelete, ret.filterPut:
-		panic("unexpected filter in delete")
-	case ret.createdNotify:
-		panic("unexpected createdNotify in delete")
 	}
 	return ret
 }
@@ -139,11 +128,7 @@ func OpPut(key, val string, opts ...OpOption) Op {
 	case ret.serializable:
 		panic("unexpected serializable in put")
 	case ret.countOnly:
-		panic("unexpected countOnly in put")
-	case ret.filterDelete, ret.filterPut:
-		panic("unexpected filter in put")
-	case ret.createdNotify:
-		panic("unexpected createdNotify in put")
+		panic("unexpected countOnly in delete")
 	}
 	return ret
 }
@@ -161,7 +146,7 @@ func opWatch(key string, opts ...OpOption) Op {
 	case ret.serializable:
 		panic("unexpected serializable in watch")
 	case ret.countOnly:
-		panic("unexpected countOnly in watch")
+		panic("unexpected countOnly in delete")
 	}
 	return ret
 }
@@ -193,14 +178,6 @@ func WithRev(rev int64) OpOption { return func(op *Op) { op.rev = rev } }
 // 'order' can be either 'SortNone', 'SortAscend', 'SortDescend'.
 func WithSort(target SortTarget, order SortOrder) OpOption {
 	return func(op *Op) {
-		if target == SortByKey && order == SortAscend {
-			// If order != SortNone, server fetches the entire key-space,
-			// and then applies the sort and limit, if provided.
-			// Since current mvcc.Range implementation returns results
-			// sorted by keys in lexiographically ascending order,
-			// client should ignore SortOrder if the target is SortByKey.
-			order = SortNone
-		}
 		op.sort = &SortOption{target, order}
 	}
 }
@@ -292,30 +269,5 @@ func withTop(target SortTarget, order SortOrder) []OpOption {
 func WithProgressNotify() OpOption {
 	return func(op *Op) {
 		op.progressNotify = true
-	}
-}
-
-// WithCreatedNotify makes watch server sends the created event.
-func WithCreatedNotify() OpOption {
-	return func(op *Op) {
-		op.createdNotify = true
-	}
-}
-
-// WithFilterPut discards PUT events from the watcher.
-func WithFilterPut() OpOption {
-	return func(op *Op) { op.filterPut = true }
-}
-
-// WithFilterDelete discards DELETE events from the watcher.
-func WithFilterDelete() OpOption {
-	return func(op *Op) { op.filterDelete = true }
-}
-
-// WithPrevKV gets the previous key-value pair before the event happens. If the previous KV is already compacted,
-// nothing will be returned.
-func WithPrevKV() OpOption {
-	return func(op *Op) {
-		op.prevKV = true
 	}
 }

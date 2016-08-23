@@ -18,7 +18,6 @@ import (
 	"encoding/json"
 	"expvar"
 	"fmt"
-	"math"
 	"math/rand"
 	"net/http"
 	"os"
@@ -155,14 +154,13 @@ type Server interface {
 
 // EtcdServer is the production implementation of the Server interface
 type EtcdServer struct {
-	// inflightSnapshots holds count the number of snapshots currently inflight.
-	inflightSnapshots int64  // must use atomic operations to access; keep 64-bit aligned.
-	appliedIndex      uint64 // must use atomic operations to access; keep 64-bit aligned.
-	committedIndex    uint64 // must use atomic operations to access; keep 64-bit aligned.
-	// consistIndex used to hold the offset of current executing entry
-	// It is initialized to 0 before executing any entry.
-	consistIndex consistentIndex // must use atomic operations to access; keep 64-bit aligned.
-	Cfg          *ServerConfig
+	// r and inflightSnapshots must be the first elements to keep 64-bit alignment for atomic
+	// access to fields
+
+	// count the number of inflight snapshots.
+	// MUST use atomic operation to access this field.
+	inflightSnapshots int64
+	Cfg               *ServerConfig
 
 	readych chan struct{}
 	r       raftNode
@@ -182,16 +180,13 @@ type EtcdServer struct {
 
 	applyV2 ApplierV2
 
-	// applyV3 is the applier with auth and quotas
-	applyV3 applierV3
-	// applyV3Base is the core applier without auth or quotas
-	applyV3Base applierV3
-	kv          mvcc.ConsistentWatchableKV
-	lessor      lease.Lessor
-	bemu        sync.Mutex
-	be          backend.Backend
-	authStore   auth.AuthStore
-	alarmStore  *alarm.AlarmStore
+	applyV3    applierV3
+	kv         mvcc.ConsistentWatchableKV
+	lessor     lease.Lessor
+	bemu       sync.Mutex
+	be         backend.Backend
+	authStore  auth.AuthStore
+	alarmStore *alarm.AlarmStore
 
 	stats  *stats.ServerStats
 	lstats *stats.LeaderStats
@@ -199,6 +194,10 @@ type EtcdServer struct {
 	SyncTicker <-chan time.Time
 	// compactor is used to auto-compact the KV.
 	compactor *compactor.Periodic
+
+	// consistent index used to hold the offset of current executing entry
+	// It is initialized to 0 before executing any entry.
+	consistIndex consistentIndex
 
 	// peerRt used to send requests (version, lease) to peers.
 	peerRt   http.RoundTripper
@@ -213,6 +212,8 @@ type EtcdServer struct {
 	// wg is used to wait for the go routines that depends on the server state
 	// to exit when stopping the server.
 	wg sync.WaitGroup
+
+	appliedIndex uint64
 }
 
 // NewServer creates a new EtcdServer from the supplied configuration. The
@@ -230,6 +231,15 @@ func NewServer(cfg *ServerConfig) (srv *EtcdServer, err error) {
 
 	if terr := fileutil.TouchDirAll(cfg.DataDir); terr != nil {
 		return nil, fmt.Errorf("cannot access data directory: %v", terr)
+	}
+
+	// Run the migrations.
+	dataVer, err := version.DetectDataDir(cfg.DataDir)
+	if err != nil {
+		return nil, err
+	}
+	if err = upgradeDataDir(cfg.DataDir, cfg.Name, dataVer); err != nil {
+		return nil, err
 	}
 
 	haveWAL := wal.Exist(cfg.WALDir())
@@ -394,11 +404,11 @@ func NewServer(cfg *ServerConfig) (srv *EtcdServer, err error) {
 	srv.applyV2 = &applierV2store{store: srv.store, cluster: srv.cluster}
 
 	srv.be = be
-	minTTL := time.Duration((3*cfg.ElectionTicks)/2) * time.Duration(cfg.TickMs) * time.Millisecond
+	srv.lessor = lease.NewLessor(srv.be)
 
 	// always recover lessor before kv. When we recover the mvcc.KV it will reattach keys to its leases.
 	// If we recover mvcc.KV first, it will attach the keys to the wrong lessor before it recovers.
-	srv.lessor = lease.NewLessor(srv.be, int64(math.Ceil(minTTL.Seconds())))
+	srv.lessor = lease.NewLessor(srv.be)
 	srv.kv = mvcc.New(srv.be, srv.lessor, &srv.consistIndex)
 	if beExist {
 		kvindex := srv.kv.ConsistentIndex()
@@ -414,7 +424,6 @@ func NewServer(cfg *ServerConfig) (srv *EtcdServer, err error) {
 		srv.compactor.Run()
 	}
 
-	srv.applyV3Base = &applierV3backend{srv}
 	if err = srv.restoreAlarms(); err != nil {
 		return nil, err
 	}
@@ -586,16 +595,6 @@ func (s *EtcdServer) run() {
 	for {
 		select {
 		case ap := <-s.r.apply():
-			var ci uint64
-			if len(ap.entries) != 0 {
-				ci = ap.entries[len(ap.entries)-1].Index
-			}
-			if ap.snapshot.Metadata.Index > ci {
-				ci = ap.snapshot.Metadata.Index
-			}
-			if ci != 0 {
-				s.setCommittedIndex(ci)
-			}
 			f := func(context.Context) { s.applyAll(&ep, &ap) }
 			sched.Schedule(f)
 		case leases := <-expiredLeaseC:
@@ -1057,7 +1056,6 @@ func (s *EtcdServer) applyEntryNormal(e *raftpb.Entry) {
 		s.consistIndex.setConsistentIndex(e.Index)
 		shouldApplyV3 = true
 	}
-	defer s.setAppliedIndex(e.Index)
 
 	// raft state machine may generate noop entry when leader confirmation.
 	// skip it in advance to avoid some potential bug in the future
@@ -1092,19 +1090,8 @@ func (s *EtcdServer) applyEntryNormal(e *raftpb.Entry) {
 		id = raftReq.Header.ID
 	}
 
-	var ar *applyResult
-	needResult := s.w.IsRegistered(id)
-	if needResult || !noSideEffect(&raftReq) {
-		if !needResult && raftReq.Txn != nil {
-			removeNeedlessRangeReqs(raftReq.Txn)
-		}
-		ar = s.applyV3.Apply(&raftReq)
-	}
-
-	if ar == nil {
-		return
-	}
-
+	ar := s.applyV3.Apply(&raftReq)
+	s.setAppliedIndex(e.Index)
 	if ar.err != ErrNoSpace || len(s.alarmStore.Get(pb.AlarmType_NOSPACE)) > 0 {
 		s.w.Trigger(id, ar)
 		return
@@ -1369,12 +1356,4 @@ func (s *EtcdServer) getAppliedIndex() uint64 {
 
 func (s *EtcdServer) setAppliedIndex(v uint64) {
 	atomic.StoreUint64(&s.appliedIndex, v)
-}
-
-func (s *EtcdServer) getCommittedIndex() uint64 {
-	return atomic.LoadUint64(&s.committedIndex)
-}
-
-func (s *EtcdServer) setCommittedIndex(v uint64) {
-	atomic.StoreUint64(&s.committedIndex, v)
 }

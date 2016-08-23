@@ -18,18 +18,17 @@ import (
 	"github.com/coreos/etcd/clientv3"
 	pb "github.com/coreos/etcd/etcdserver/etcdserverpb"
 	"github.com/coreos/etcd/proxy/grpcproxy/cache"
-
 	"golang.org/x/net/context"
 )
 
 type kvProxy struct {
-	kv    clientv3.KV
+	c     *clientv3.Client
 	cache cache.Cache
 }
 
-func NewKvProxy(c *clientv3.Client) pb.KVServer {
+func NewKvProxy(c *clientv3.Client) *kvProxy {
 	return &kvProxy{
-		kv:    c.KV,
+		c:     c,
 		cache: cache.NewCache(cache.DefaultMaxEntries),
 	}
 }
@@ -37,37 +36,31 @@ func NewKvProxy(c *clientv3.Client) pb.KVServer {
 func (p *kvProxy) Range(ctx context.Context, r *pb.RangeRequest) (*pb.RangeResponse, error) {
 	// if request set Serializable, serve it from local cache first
 	if r.Serializable {
-		resp, err := p.cache.Get(r)
-		switch err {
-		case nil:
-			return resp, nil
-		case cache.ErrCompacted:
-			return nil, err
+		if resp, err := p.cache.Get(r); err == nil || err == cache.ErrCompacted {
+			return resp, err
 		}
 	}
 
-	resp, err := p.kv.Do(ctx, RangeRequestToOp(r))
+	resp, err := p.c.Do(ctx, RangeRequestToOp(r))
 	if err != nil {
-		return nil, err
+		p.cache.Add(r, (*pb.RangeResponse)(resp.Get()))
 	}
 
-	p.cache.Add(r, (*pb.RangeResponse)(resp.Get()))
-
-	return (*pb.RangeResponse)(resp.Get()), nil
+	return (*pb.RangeResponse)(resp.Get()), err
 }
 
 func (p *kvProxy) Put(ctx context.Context, r *pb.PutRequest) (*pb.PutResponse, error) {
-	resp, err := p.kv.Do(ctx, PutRequestToOp(r))
+	resp, err := p.c.Do(ctx, PutRequestToOp(r))
 	return (*pb.PutResponse)(resp.Put()), err
 }
 
 func (p *kvProxy) DeleteRange(ctx context.Context, r *pb.DeleteRangeRequest) (*pb.DeleteRangeResponse, error) {
-	resp, err := p.kv.Do(ctx, DelRequestToOp(r))
+	resp, err := p.c.Do(ctx, DelRequestToOp(r))
 	return (*pb.DeleteRangeResponse)(resp.Del()), err
 }
 
 func (p *kvProxy) Txn(ctx context.Context, r *pb.TxnRequest) (*pb.TxnResponse, error) {
-	txn := p.kv.Txn(ctx)
+	txn := p.c.Txn(ctx)
 	cmps := make([]clientv3.Cmp, len(r.Compare))
 	thenops := make([]clientv3.Op, len(r.Success))
 	elseops := make([]clientv3.Op, len(r.Failure))
@@ -88,18 +81,8 @@ func (p *kvProxy) Txn(ctx context.Context, r *pb.TxnRequest) (*pb.TxnResponse, e
 	return (*pb.TxnResponse)(resp), err
 }
 
-func (p *kvProxy) Compact(ctx context.Context, r *pb.CompactionRequest) (*pb.CompactionResponse, error) {
-	var opts []clientv3.CompactOption
-	if r.Physical {
-		opts = append(opts, clientv3.WithCompactPhysical())
-	}
-
-	resp, err := p.kv.Compact(ctx, r.Revision, opts...)
-	if err == nil {
-		p.cache.Compact(r.Revision)
-	}
-
-	return (*pb.CompactionResponse)(resp), err
+func (p *kvProxy) Close() error {
+	return p.c.Close()
 }
 
 func requestOpToOp(union *pb.RequestOp) clientv3.Op {
@@ -151,8 +134,10 @@ func DelRequestToOp(r *pb.DeleteRangeRequest) clientv3.Op {
 	if len(r.RangeEnd) != 0 {
 		opts = append(opts, clientv3.WithRange(string(r.RangeEnd)))
 	}
-	if r.PrevKv {
-		opts = append(opts, clientv3.WithPrevKV())
-	}
+
 	return clientv3.OpDelete(string(r.Key), opts...)
+}
+
+func (p *kvProxy) Compact(ctx context.Context, r *pb.CompactionRequest) (*pb.CompactionResponse, error) {
+	panic("unimplemented")
 }

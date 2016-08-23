@@ -515,7 +515,7 @@ func NewClientV3(m *member) (*clientv3.Client, error) {
 		}
 		cfg.TLS = tls
 	}
-	return newClientV3(cfg)
+	return clientv3.New(cfg)
 }
 
 // Clone returns a member with the same server configuration. The returned
@@ -752,6 +752,7 @@ func NewClusterV3(t *testing.T, cfg *ClusterConfig) *ClusterV3 {
 	clus := &ClusterV3{
 		cluster: NewClusterByConfig(t, cfg),
 	}
+	clus.Launch(t)
 	for _, m := range clus.Members {
 		client, err := NewClientV3(m)
 		if err != nil {
@@ -759,7 +760,6 @@ func NewClusterV3(t *testing.T, cfg *ClusterConfig) *ClusterV3 {
 		}
 		clus.clients = append(clus.clients, client)
 	}
-	clus.Launch(t)
 
 	return clus
 }
@@ -803,4 +803,14 @@ type grpcAPI struct {
 	Watch pb.WatchClient
 	// Maintenance is the maintenance API for the client's connection.
 	Maintenance pb.MaintenanceClient
+}
+
+func toGRPC(c *clientv3.Client) grpcAPI {
+	return grpcAPI{
+		pb.NewClusterClient(c.ActiveConnection()),
+		pb.NewKVClient(c.ActiveConnection()),
+		pb.NewLeaseClient(c.ActiveConnection()),
+		pb.NewWatchClient(c.ActiveConnection()),
+		pb.NewMaintenanceClient(c.ActiveConnection()),
+	}
 }
