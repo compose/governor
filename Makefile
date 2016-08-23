@@ -11,7 +11,7 @@ vet:
 	@go vet ${PKG_LIST}
 
 test:
-	@go test ${PKG_LIST}
+	@go test -v ${PKG_LIST}
 
 lint:
 	@for file in ${GO_FILES}; do \
