@@ -27,14 +27,18 @@ type fsm struct {
 	current bool
 
 	// record leader in snapshot
-	leader          *leaderBackend
-	leaderChans     map[uint64]chan LeaderUpdate
+	leader      *leaderBackend
+	leaderChans map[uint64]chan LeaderUpdate
+
+	// Do not itialize: acts as atomic counter for observers
 	leaderObserveID uint64
 	leaderTTL       int64
 
 	// record members in snapshot
-	members         map[string]*memberBackend
-	memberChans     map[uint64]chan MemberUpdate
+	members     map[string]*memberBackend
+	memberChans map[uint64]chan MemberUpdate
+
+	// Do not itialize: acts as atomic counter for observers
 	memberObserveID uint64
 	memberTTL       int64
 
@@ -107,8 +111,10 @@ type Config struct {
 	BootstrapNode  bool     `yaml:"is_bootstrap"`
 	DataDir        string   `yaml:"data_dir"`
 	ClusterID      uint64   `yaml:"cluster_id"`
-	LeaderTTL      int      `yaml:"leader_ttl"`
-	MemberTTL      int      `yaml:"member_ttl"`
+	// LeaderTTL in milliseconds
+	LeaderTTL int `yaml:"leader_ttl"`
+	// MemberTTL in milliseconds
+	MemberTTL int `yaml:"member_ttl"`
 }
 
 func NewGovernorFSM(config *Config) (SingleLeaderFSM, error) {
@@ -204,13 +210,11 @@ func (f *fsm) run() error {
 		close(f.stoppedc)
 	}(f)
 
-	ttlTicker := time.NewTicker(500 * time.Millisecond)
-
 	for {
 		select {
 		case <-f.stopc:
 			return nil
-		case <-ttlTicker.C:
+		case <-f.syncTicker:
 			if err := f.proposeDeleteStaleLeader(); err != nil {
 				return errors.Wrap(err, "Error proposing delete stale leader")
 			}
