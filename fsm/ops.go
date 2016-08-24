@@ -53,7 +53,7 @@ func (f *fsm) Apply(log canoe.LogData) error {
 			return errors.Wrap(err, "Error Applying refresh leader op")
 		}
 	case deleteLeaderOp:
-		if err := f.applyDeleteLeader(); err != nil {
+		if err := f.applyDeleteLeader(cmd.Data); err != nil {
 			return errors.Wrap(err, "Error applying delete leader op")
 		}
 	case deleteStaleLeaderOp:
@@ -91,12 +91,18 @@ func (f *fsm) Apply(log canoe.LogData) error {
 }
 
 type deleteLeaderCmd struct {
+	ID string
 }
 
-func (f *fsm) applyDeleteLeader() error {
+func (f *fsm) applyDeleteLeader(cmdData []byte) error {
 	log.WithFields(log.Fields{
 		"package": "fsm",
 	}).Debug("Applying delete leader log")
+
+	var cmd deleteLeaderCmd
+	if err := json.Unmarshal(cmdData, &cmd); err != nil {
+		return errors.Wrap(err, "Error unmarshaling stale leader cmd")
+	}
 
 	update := &LeaderUpdate{
 		Type: LeaderUpdateDeletedType,
@@ -105,21 +111,23 @@ func (f *fsm) applyDeleteLeader() error {
 	f.Lock()
 	defer f.Unlock()
 
-	if f.leader != nil {
+	if f.leader != nil && f.leader.ID == cmd.ID {
 		update.OldLeader = f.leader.Data
-	}
 
-	f.leader = nil
+		f.leader = nil
 
-	if err := f.observeLeaderUpdate(update); err != nil {
-		return errors.Wrap(err, "Error observing leader update")
+		if err := f.observeLeaderUpdate(update); err != nil {
+			return errors.Wrap(err, "Error observing leader update")
+		}
 	}
 
 	return nil
 }
 
-func (f *fsm) proposeDeleteLeader() error {
-	req := &deleteLeaderCmd{}
+func (f *fsm) proposeDeleteLeader(leader Leader) error {
+	req := &deleteLeaderCmd{
+		ID: leader.ID(),
+	}
 
 	return errors.Wrap(f.proposeCmd(deleteLeaderOp, req), "Error proposing delete cmd")
 }

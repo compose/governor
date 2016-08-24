@@ -59,7 +59,7 @@ type SingleLeaderFSM interface {
 	RaceForLeader(leader Leader) error
 	RefreshLeader() error
 	ForceLeader(leader Leader) error
-	DeleteLeader() error
+	DeleteLeader(leader Leader) error
 	Leader(leader Leader) (bool, error)
 
 	MemberObserver() (MemberObserver, error)
@@ -289,8 +289,8 @@ func (f *fsm) ForceLeader(leader Leader) error {
 	return errors.Wrap(f.proposeForceLeader(leader), "Error proposing force leader")
 }
 
-func (f *fsm) DeleteLeader() error {
-	return errors.Wrap(f.proposeDeleteLeader(), "Error proposing delete leader")
+func (f *fsm) DeleteLeader(leader Leader) error {
+	return errors.Wrap(f.proposeDeleteLeader(leader), "Error proposing delete leader")
 }
 
 func (f *fsm) Leader(leader Leader) (bool, error) {
