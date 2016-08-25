@@ -127,9 +127,6 @@ func NewGovernorFSM(config *Config) (SingleLeaderFSM, error) {
 		memberChans: make(map[uint64]chan MemberUpdate),
 		leaderChans: make(map[uint64]chan LeaderUpdate),
 
-		stopc:    make(chan struct{}),
-		stoppedc: make(chan struct{}),
-
 		observationLock: sync.Mutex{},
 
 		syncTicker: time.Tick(500 * time.Millisecond),
@@ -192,6 +189,9 @@ func NewGovernorFSM(config *Config) (SingleLeaderFSM, error) {
 }
 
 func (f *fsm) start() error {
+	f.stopc = make(chan struct{})
+	f.stoppedc = make(chan struct{})
+
 	if err := f.raft.Start(); err != nil {
 		return errors.Wrap(err, "Error starting raft")
 	}
@@ -445,12 +445,14 @@ func (f *fsm) Destroy() error {
 		return errors.Wrap(err, "Error destroying raft")
 	}
 
-	close(f.stopc)
+	if f.stopc != nil {
+		close(f.stopc)
 
-	select {
-	case <-f.stoppedc:
-	case <-time.Tick(10 * time.Second):
-		return ErrorTimedOutCleanup
+		select {
+		case <-f.stoppedc:
+		case <-time.Tick(10 * time.Second):
+			return ErrorTimedOutCleanup
+		}
 	}
 
 	return nil
