@@ -229,6 +229,11 @@ func (f *fsm) UniqueID() uint64 {
 	return f.raft.UniqueID()
 }
 
+// LeaderCh returns a channel with LeaderUpdates
+// LeaderCh does not block. Note: this means if the user is not monitoring
+// LeaderCh then the LeaderUpdate will be lost it is the user's
+// responsibility to ensure the channel is consumed as aggressively as is needed
+// based on expected update to the leader
 func (f *fsm) LeaderObserver() (LeaderObserver, error) {
 	f.observationLock.Lock()
 	defer f.observationLock.Unlock()
@@ -255,6 +260,10 @@ type leaderUpdateObserver struct {
 	updateCh <-chan LeaderUpdate
 	fsm      *fsm
 	id       uint64
+}
+
+func (l *leaderUpdateObserver) LeaderCh() <-chan LeaderUpdate {
+	return l.updateCh
 }
 
 func (l *leaderUpdateObserver) Destroy() error {
@@ -325,6 +334,10 @@ type memberUpdateObserver struct {
 	updateCh <-chan MemberUpdate
 	fsm      *fsm
 	id       uint64
+}
+
+func (m *memberUpdateObserver) MemberCh() <-chan MemberUpdate {
+	return m.updateCh
 }
 
 func (m *memberUpdateObserver) Destroy() error {
