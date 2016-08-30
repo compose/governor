@@ -104,6 +104,7 @@ func (f *fsm) RaceForInit(timeout time.Duration) (bool, error) {
 	}
 }
 
+// TODO: allow custom logger to be passed in
 type Config struct {
 	RaftPort       int      `yaml:"raft_port"`
 	APIPort        int      `yaml:"api_port"`
