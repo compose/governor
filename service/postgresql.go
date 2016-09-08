@@ -735,6 +735,9 @@ func (p *postgresql) restart() error {
 
 	argFields := strings.Fields(combinedArgs)
 
+	argFields = append(argFields, "-o")
+	argFields = append(argFields, p.serverOptions())
+
 	cmd := exec.Command("pg_ctl",
 		argFields...,
 	)
