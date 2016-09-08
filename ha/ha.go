@@ -263,6 +263,7 @@ func (ha *SingleLeaderHA) Stop() error {
 	if err := ha.fsm.Cleanup(); err != nil {
 		return err
 	}
+
 	if err := ha.service.Stop(); err != nil {
 		return err
 	}
