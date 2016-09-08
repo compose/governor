@@ -42,7 +42,6 @@ func NewPostgresql(config *PostgresqlConfig) (*postgresql, error) {
 		host:                 strings.Split(config.Listen, ":")[0],
 		dataDir:              filepath.Join(config.DataDirectory, "data"),
 		authDir:              filepath.Join(config.DataDirectory, "auth"),
-		walDir:               filepath.Join(config.DataDirectory, "wal_archive"),
 		maximumLagOnFailover: config.MaximumLagOnFailover,
 		replication:          config.Replication,
 		parameters:           config.Parameters,
@@ -62,9 +61,6 @@ func NewPostgresql(config *PostgresqlConfig) (*postgresql, error) {
 	}
 	if err := os.MkdirAll(pg.authDir, os.FileMode(0700)); err != nil {
 		return nil, errors.Wrap(err, "Error ensuring auth dir is created")
-	}
-	if err := os.MkdirAll(pg.walDir, os.FileMode(0700)); err != nil {
-		return nil, errors.Wrap(err, "Error ensuring wal dir is created")
 	}
 
 	db, err := sql.Open("postgres", pg.localControlConnectionString())
@@ -106,7 +102,6 @@ type postgresql struct {
 
 	dataDir    string
 	authDir    string
-	walDir     string
 	configFile string
 	hbaFile    string
 	pidFile    string
@@ -470,11 +465,11 @@ func (p *postgresql) initialize() error {
 }
 
 func (p *postgresql) ensureConfig() error {
+	// TODO: change to only specify archive_mode
+	// if archive level args are specified somewhere. Then force archive_mode to "always"
 	requiredConfigArgs := map[string]string{
-		"archive_mode":    "always",
-		"wal_level":       "hot_standby",
-		"archive_command": fmt.Sprintf("mkdir -p %s && cp %%p %s/%%f", p.walDir, p.walDir),
-		"hot_standby":     "on",
+		"wal_level":   "hot_standby",
+		"hot_standby": "on",
 	}
 
 	config, err := os.OpenFile(p.configFile,
@@ -501,6 +496,9 @@ func (p *postgresql) ensureConfig() error {
 	// that we need to take into account
 	regexTemplate := `(?m)^\s*(%s[= ].*)$`
 	for arg, val := range requiredConfigArgs {
+		// Ensure we aren't passing contrary configs
+		delete(p.parameters, arg)
+
 		re := regexp.MustCompile(fmt.Sprintf(regexTemplate, arg))
 
 		// if this arg doesn't exist
