@@ -261,4 +261,134 @@ func TestApply(t *testing.T) {
 			delete(fsm.members, "1234")
 		})
 	})
+	t.Run("Should apply refresh member op", func(t *testing.T) {
+		t.Run("Member should be refreshed when a refresh cmd with it's ID is applied", func(t *testing.T) {
+			fsm.members["1234"] = &memberBackend{
+				ID:   "1234",
+				Time: time.Now().UnixNano(),
+			}
+
+			refreshMember := &refreshMemberCmd{
+				ID:   "1234",
+				Time: 0,
+			}
+			cmdData, err := marshalledTestCmdFromStructs(refreshMember, refreshMemberOp)
+			assert.NoError(t, err, "Should be no error getting raw command")
+
+			err = fsm.Apply(cmdData)
+			assert.NoError(t, err, "Should be no error applying command")
+
+			member, ok := fsm.members["1234"]
+			assert.True(t, ok, "Member 1234 should exist in members")
+			assert.Equal(t, refreshMember.Time, member.Time)
+			delete(fsm.members, "1234")
+
+		})
+		t.Run("Member should not be refreshed when a refresh cmd with diff ID is applied", func(t *testing.T) {
+			fsm.members["1234"] = &memberBackend{
+				ID:   "1234",
+				Time: time.Now().UnixNano(),
+			}
+
+			refreshMember := &refreshMemberCmd{
+				ID:   "5678",
+				Time: 0,
+			}
+			cmdData, err := marshalledTestCmdFromStructs(refreshMember, refreshMemberOp)
+			assert.NoError(t, err, "Should be no error getting raw command")
+
+			err = fsm.Apply(cmdData)
+			assert.NoError(t, err, "Should be no error applying command")
+
+			member, ok := fsm.members["1234"]
+			assert.True(t, ok, "Member 1234 should exist in members")
+			assert.NotEqual(t, refreshMember.Time, member.Time)
+			delete(fsm.members, "1234")
+
+		})
+	})
+	t.Run("Should apply delete member op", func(t *testing.T) {
+		t.Run("Member should be deleted when a delete cmd with it's ID is applied", func(t *testing.T) {
+			fsm.members["1234"] = &memberBackend{
+				ID:   "1234",
+				Time: time.Now().UnixNano(),
+			}
+
+			deleteMember := &deleteMemberCmd{
+				ID: "1234",
+			}
+			cmdData, err := marshalledTestCmdFromStructs(deleteMember, deleteMemberOp)
+			assert.NoError(t, err, "Should be no error getting raw command")
+
+			err = fsm.Apply(cmdData)
+			assert.NoError(t, err, "Should be no error applying command")
+
+			_, ok := fsm.members["1234"]
+			assert.False(t, ok, "Member 1234 should exist in members")
+			delete(fsm.members, "1234")
+		})
+		t.Run("Member should not be deleted when a delete cmd with it's ID is applied", func(t *testing.T) {
+			fsm.members["1234"] = &memberBackend{
+				ID:   "1234",
+				Time: time.Now().UnixNano(),
+			}
+
+			deleteMember := &deleteMemberCmd{
+				ID: "5678",
+			}
+			cmdData, err := marshalledTestCmdFromStructs(deleteMember, deleteMemberOp)
+			assert.NoError(t, err, "Should be no error getting raw command")
+
+			err = fsm.Apply(cmdData)
+			assert.NoError(t, err, "Should be no error applying command")
+
+			_, ok := fsm.members["1234"]
+			assert.True(t, ok, "Member 1234 should exist in members")
+			delete(fsm.members, "1234")
+		})
+	})
+	t.Run("Should apply delete stale members op", func(t *testing.T) {
+		t.Run("Member should be deleted if stale", func(t *testing.T) {
+			fsm.members["1234"] = &memberBackend{
+				ID:   "1234",
+				TTL:  time.Duration(1 * time.Second).Nanoseconds(),
+				Time: time.Now().UnixNano(),
+			}
+
+			deleteStaleMembers := &deleteStaleMembersCmd{
+				Time: fsm.members["1234"].Time + time.Duration(2*time.Second).Nanoseconds(),
+			}
+			cmdData, err := marshalledTestCmdFromStructs(deleteStaleMembers, deleteStaleMembersOp)
+			assert.NoError(t, err, "Should be no error getting raw command")
+
+			err = fsm.Apply(cmdData)
+			assert.NoError(t, err, "Should be no error applying command")
+
+			_, ok := fsm.members["1234"]
+			assert.False(t, ok, "Member 1234 should not exist in members")
+			delete(fsm.members, "1234")
+
+		})
+		t.Run("Member should not be deleted if a delete stale without proper time", func(t *testing.T) {
+			fsm.members["1234"] = &memberBackend{
+				ID:   "1234",
+				TTL:  time.Duration(2 * time.Second).Nanoseconds(),
+				Time: time.Now().UnixNano(),
+			}
+
+			deleteStaleMembers := &deleteStaleMembersCmd{
+				Time: fsm.members["1234"].Time + time.Duration(1*time.Second).Nanoseconds(),
+			}
+
+			cmdData, err := marshalledTestCmdFromStructs(deleteStaleMembers, deleteStaleMembersOp)
+			assert.NoError(t, err, "Should be no error getting raw command")
+
+			err = fsm.Apply(cmdData)
+			assert.NoError(t, err, "Should be no error applying command")
+
+			_, ok := fsm.members["1234"]
+			assert.True(t, ok, "Member 1234 should exist in members")
+			delete(fsm.members, "1234")
+		})
+	})
 }
