@@ -633,13 +633,19 @@ func (p *postgresql) updateFiles() error {
 	hbaRow := p.conn.QueryRow("SHOW hba_file;")
 	pidRow := p.conn.QueryRow("SHOW external_pid_file;")
 
+	log.Info("Finding Files to update")
+
 	if err := confRow.Scan(&configFile); err != nil {
+		log.Errorf("Couldn't find config file: %+v", err)
 		return errors.Wrap(err, "Error querying pg for config_file")
 	}
+
 	if err := hbaRow.Scan(&hbaFile); err != nil {
+		log.Error("Couldn't find hba file")
 		return errors.Wrap(err, "Error querying pg for hba_file")
 	}
 	if err := pidRow.Scan(&pidFile); err != nil {
+		log.Error("Couldn't find pid file")
 		return errors.Wrap(err, "Error querying pg for hba_file")
 	}
 
