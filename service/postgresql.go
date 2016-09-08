@@ -725,6 +725,10 @@ func (p *postgresql) restart() error {
 	p.opLock.Lock()
 	defer p.opLock.Unlock()
 
+	if err := p.updateFiles(); err != nil {
+		return errors.Wrap(err, "Error updating file locations")
+	}
+
 	restartArg := "restart"
 	waitFlag := "-w"
 	logArg := fmt.Sprintf("--log=%s", filepath.Join(p.dataDir, "pg_log"))
