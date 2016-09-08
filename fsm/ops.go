@@ -29,7 +29,7 @@ type command struct {
 }
 
 func init() {
-	log.SetLevel(log.DebugLevel)
+	//	log.SetLevel(log.DebugLevel)
 }
 
 // Apply completes the FSM requirement
