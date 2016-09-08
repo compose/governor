@@ -94,6 +94,7 @@ func main() {
 				log.WithFields(log.Fields{
 					"package": "governor",
 				}).Errorf("Did not successfully teardown %+v", err)
+				os.Exit(1)
 			}
 
 			log.WithFields(log.Fields{
