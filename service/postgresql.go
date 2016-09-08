@@ -86,6 +86,8 @@ func (p *postgresql) initConfigs() error {
 
 	if val, ok := p.parameters["hba_file"]; ok {
 		p.hbaFile = val.(string)
+	} else {
+		p.hbaFile = filepath.Join(p.dataDir, "pg_hba.conf")
 	}
 
 	if val, ok := p.parameters["pid_file"]; ok {
