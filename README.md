@@ -1,4 +1,4 @@
-# Governor: A Template for PostgreSQL HA with etcd
+# Governor: A Template for PostgreSQL HA backed with raft
 
 *There are many ways to run high availability with PostgreSQL; here we present a template for you to create your own custom fit high availability solution using etcd and python for maximum accessibility.*
 
@@ -8,9 +8,9 @@ Compose runs a a [Postgresql as a service platform](https://www.compose.io/postg
 To get started, do the following from different terminals:
 
 ```
-> etcd --data-dir=data/etcd
-> ./governor.py postgres0.yml
-> ./governor.py postgres1.yml
+> go build
+> ./governor postgres0.yml
+> ./governor postgres1.yml
 ```
 
 From there, you will see a high-availability cluster start up. Test
@@ -22,7 +22,6 @@ Add more `postgres*.yml` files to create an even larger cluster.
 We provide a haproxy configuration, which will give your application a single endpoint for connecting to the cluster's leader.  To configure, run:
 
 ```
-> haproxy -f haproxy.cfg
 > sh haproxy_status.sh 127.0.0.1 5432 15432
 > sh haproxy_status.sh 127.0.0.1 5433 15433
 ```
@@ -31,38 +30,38 @@ We provide a haproxy configuration, which will give your application a single en
 > psql --host 127.0.0.1 --port 5000 postgres
 ```
 
+Note: Governor has a built in HTTP API for checking the state of the cluster
+
 ## How Governor works
 
-For a diagram of the high availability decision loop, see the included a PDF: [postgres-ha.pdf](https://github.com/compose/template-etcd-based-postgres-ha/blob/master/postgres-ha.pdf)
+Governor relies on the [Canoe](https://github.com/compose/canoe) raft library to back it's state machine. 
 
 ## YAML Configuration
 
 For an example file, see `postgres0.yml`.  Below is an explanation of settings:
 
 * *loop_wait*: the number of seconds the loop will sleep
+* *data_dir*: the data directory for both postgres and the state machine
 
-* *etcd*
-  * *scope*: the relative path used on etcd's http api for this deployment, thus you can run multiple HA deployments from a single etcd
-  * *ttl*: the TTL to acquire the leader lock.  Think of it as the length of time before automatic failover process is initiated.
-  * *endpoint*: the scheme://host:port for the etcd endpoint where scheme is https or http
-  * *authentication*: optional if etcd is protected by HTTP basic auth
-    * *username*: username for accessing etcd
-    * *password*: password for accessing etcd
+* *fsm*
+  * *raft_port*: The port canoe uses to send raft-specific messages
+  * *api_port*: The port canoe uses to expose an API and manage cluster membership
+  * *bootstrap_peers*: 
+    * - List of peers in a cluster you wish to join.
+  * *is_bootstrap*: Specifies if this is the single bootstrap node for the canoe cluster. For now - if true bootstrap_peers are ignored
+  * *cluster_id*: Optional - Specify an ID for the cluster to use. Note: All nodes in a cluster must share a cluster_id
+  * *member_ttl*: TTL until a dead member is recognized in seconds. The smallest number without incurring false positives is best here. Test on your network
+  * *leader_ttl*: TTL until a dead leader is recognized in seconds. The smallest number without incurring false positives is best here. Test on your network
 
 * *postgresql*
   * *name*: the name of the Postgres host, must be unique for the cluster
   * *listen*: ip address + port that Postgres listening. Must be accessible from other nodes in the cluster if using streaming replication.
-  * *data_dir*: file path to initialize and store Postgres data files
   * *maximum_lag_on_failover*: the maximum bytes a follower may lag before it is not eligible become leader
   * *replication*
     * *username*: replication username, user will be created during initialization
     * *password*: replication password, user will be created during initialization
     * *network*: network setting for replication in pg_hba.conf
-  * *recovery_conf*: configuration settings written to recovery.conf when configuring follower
   * *parameters*: list of configuration settings for Postgres
-
-* *haproxy_status*
-  * *listen*: ip address + port for haproxy check. Must be accesible for haproxy.
 
 ## Replication choices
 
@@ -87,14 +86,9 @@ Choosing your replication schema is dependent on the many business decisions.  I
 
 When connecting from an application, always use a non-superuser. Governor requires access to the database to function properly.  By using a superuser from application, you can potentially use the entire connection pool, including the connections reserved for superusers with the `superuser_reserved_connections` setting. If Governor cannot access the Primary, because the connection pool is full, behavior will be undesireable.
 
-## Requirements on a Mac
+## External Requirements
 
-Run the following on a Mac to install requirements:
-
-```
-brew install postgresql etcd haproxy libyaml python
-pip install psycopg2 pyyaml
-```
+* Postgresql
 
 ## Notice
 
