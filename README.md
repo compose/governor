@@ -9,8 +9,8 @@ To get started, do the following from different terminals:
 
 ```
 > go build
-> ./governor postgres0.yml
-> ./governor postgres1.yml
+> ./governor --config postgres0.yml
+> ./governor --config postgres1.yml
 ```
 
 From there, you will see a high-availability cluster start up. Test
