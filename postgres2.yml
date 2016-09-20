@@ -1,8 +1,9 @@
 loop_wait: 1000 #milliseconds
 data_dir: "data/postgres2" #canoe and pg data will go here
+api_port: 5002
 fsm:
   raft_port: 1236
-  api_port: 1246
+  cluster_config_port: 1246
   bootstrap_peers:
           - http://localhost:1244
           - http://localhost:1245

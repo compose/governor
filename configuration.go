@@ -13,7 +13,7 @@ type Configuration struct {
 	DataDir    string                    `yaml:"data_dir"`
 	FSM        *fsm.Config               `yaml:"fsm"`
 	Postgresql *service.PostgresqlConfig `yaml:"postgresql"`
-	HAHealth   string                    `yaml:"haproxy_health_endpoint"`
+	APIPort    int                       `yaml:"api_port"`
 }
 
 func LoadConfiguration(path string) (Configuration, error) {

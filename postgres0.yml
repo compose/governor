@@ -1,8 +1,9 @@
 loop_wait: 1000 #milliseconds
 data_dir: "data/postgres0" #canoe and pg data will go here
+api_port: 5000
 fsm:
   raft_port: 1234
-  api_port: 1244
+  cluster_config_port: 1244
   #bootstrap_peers:
           #- http://localhost:1245
   #TODO: Alter canoe to allow set-list of bootstrap peers

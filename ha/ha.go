@@ -303,7 +303,7 @@ func (ha *SingleLeaderHA) RunCycle() error {
 			}
 		}
 
-		isLeader, err := ha.isLeader()
+		isLeader, err := ha.IsLeader()
 		if err != nil {
 			return err
 		}
@@ -469,13 +469,16 @@ func (ha *SingleLeaderHA) leaderIsMe(leader fsm.Leader) (bool, error) {
 
 }
 
-func (ha *SingleLeaderHA) isLeader() (bool, error) {
-	curLeader := ha.service.FSMLeaderTemplate()
-	exists, err := ha.fsm.Leader(curLeader)
+func (ha *SingleLeaderHA) IsLeader() (bool, error) {
+	leaderData, exists, err := ha.fsm.Leader()
 	if err != nil {
 		return false, err
 	} else if !exists {
 		return false, nil
+	}
+	curLeader, err := ha.service.FSMLeaderFromBytes(leaderData)
+	if err != nil {
+		return false, errors.Wrap(err, "Error getting leader from bytes")
 	}
 
 	meAsLeader, err := ha.service.AsFSMLeader()

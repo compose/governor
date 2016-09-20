@@ -106,12 +106,12 @@ func (f *fsm) RaceForInit(timeout time.Duration) (bool, error) {
 
 // TODO: allow custom logger to be passed in
 type Config struct {
-	RaftPort       int      `yaml:"raft_port"`
-	APIPort        int      `yaml:"api_port"`
-	BootstrapPeers []string `yaml:"bootstrap_peers"`
-	BootstrapNode  bool     `yaml:"is_bootstrap"`
-	DataDir        string   `yaml:"data_dir"`
-	ClusterID      uint64   `yaml:"cluster_id"`
+	RaftPort          int      `yaml:"raft_port"`
+	ClusterConfigPort int      `yaml:"cluster_config_port"`
+	BootstrapPeers    []string `yaml:"bootstrap_peers"`
+	BootstrapNode     bool     `yaml:"is_bootstrap"`
+	DataDir           string   `yaml:"data_dir"`
+	ClusterID         uint64   `yaml:"cluster_id"`
 	// LeaderTTL in milliseconds
 	LeaderTTL int `yaml:"leader_ttl"`
 	// MemberTTL in milliseconds
@@ -138,7 +138,7 @@ func NewGovernorFSM(config *Config) (SingleLeaderFSM, error) {
 		FSM:            newFSM,
 		ClusterID:      config.ClusterID,
 		RaftPort:       config.RaftPort,
-		APIPort:        config.APIPort,
+		APIPort:        config.ClusterConfigPort,
 		BootstrapPeers: config.BootstrapPeers,
 		BootstrapNode:  config.BootstrapNode,
 		DataDir:        config.DataDir,

@@ -5,9 +5,11 @@ import (
 	//"os/exec"
 	"flag"
 	log "github.com/Sirupsen/logrus"
+	"github.com/compose/governor/api"
 	"github.com/compose/governor/fsm"
 	"github.com/compose/governor/ha"
 	"github.com/compose/governor/service"
+	"net/http"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -102,6 +104,15 @@ func main() {
 			}).Info("Clean Shutdown Finished")
 		}
 	}(singleHA, singleLeaderState, pg)
+
+	go func() {
+		router, err := api.Router(singleLeaderState, singleHA, pg)
+		if err != nil {
+			log.Error("Could not start API")
+		}
+		http.ListenAndServe(fmt.Sprintf(":%d", configuration.APIPort), router)
+	}()
+
 	if err := singleHA.Run(); err != nil {
 		log.Fatalf("Error Running HA, %+v", err)
 	}
