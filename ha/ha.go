@@ -210,9 +210,8 @@ func (ha *SingleLeaderHA) raceRetryForInit(eb *backoff.ExponentialBackOff) (bool
 }
 
 func (ha *SingleLeaderHA) waitForLeader(eb *backoff.ExponentialBackOff) (fsm.Leader, error) {
-	leader := ha.service.FSMLeaderTemplate()
 	for {
-		exists, err := ha.fsm.Leader(leader)
+		leaderData, exists, err := ha.fsm.Leader()
 		if err != nil {
 			return nil, err
 		}
@@ -224,6 +223,11 @@ func (ha *SingleLeaderHA) waitForLeader(eb *backoff.ExponentialBackOff) (fsm.Lea
 
 			time.Sleep(eb.NextBackOff())
 			continue
+		}
+
+		leader, err := ha.service.FSMLeaderFromBytes(leaderData)
+		if err != nil {
+			return nil, errors.Wrap(err, "Error converting bytes to leader")
 		}
 
 		return leader, nil
@@ -289,8 +293,7 @@ func (ha *SingleLeaderHA) RunCycle() error {
 			return err
 		}
 
-		tempMember := ha.service.FSMMemberTemplate()
-		exists, err := ha.fsm.Member(member.ID(), tempMember)
+		_, exists, err := ha.fsm.Member(member.ID())
 		if err != nil {
 			return errors.Wrap(err, "Error checking for member existance")
 		}

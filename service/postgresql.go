@@ -210,14 +210,6 @@ func (p *postgresql) FSMMemberFromBytes(data []byte) (fsm.Member, error) {
 	return member, nil
 }
 
-func (p *postgresql) FSMLeaderTemplate() fsm.Leader {
-	return &clusterMember{}
-}
-
-func (p *postgresql) FSMMemberTemplate() fsm.Member {
-	return &clusterMember{}
-}
-
 // TODO: Change interface to (bool, error)???
 // TODO: Have HA ask FSM to give update of WAL and pass those in
 //	 That way we have consensus in the FSM of which node should be elected

@@ -60,13 +60,13 @@ type SingleLeaderFSM interface {
 	RefreshLeader() error
 	ForceLeader(leader Leader) error
 	DeleteLeader(leader Leader) error
-	Leader(leader Leader) (bool, error)
+	Leader() ([]byte, bool, error)
 
 	MemberObserver() (MemberObserver, error)
 	SetMember(member Member) error
 	RefreshMember(id string) error
 	DeleteMember(id string) error
-	Member(id string, member Member) (bool, error)
+	Member(id string) ([]byte, bool, error)
 	Members() ([][]byte, error)
 
 	CompletedRestore() bool
@@ -294,19 +294,15 @@ func (f *fsm) DeleteLeader(leader Leader) error {
 	return errors.Wrap(f.proposeDeleteLeader(leader), "Error proposing delete leader")
 }
 
-func (f *fsm) Leader(leader Leader) (bool, error) {
+func (f *fsm) Leader() ([]byte, bool, error) {
 	f.Lock()
 	defer f.Unlock()
 	if f.leader == nil {
 		f.leader = nil
-		return false, nil
+		return []byte{}, false, nil
 	}
 
-	if err := leader.UnmarshalFSM(f.leader.Data); err != nil {
-		return false, errors.Wrap(err, "Error unmarshaling leader")
-	}
-
-	return true, nil
+	return f.leader.Data, true, nil
 }
 
 func (f *fsm) MemberObserver() (MemberObserver, error) {
@@ -364,17 +360,13 @@ func (f *fsm) DeleteMember(id string) error {
 	return errors.Wrap(f.proposeDeleteMember(id), "Error proposing delete member")
 }
 
-func (f *fsm) Member(id string, member Member) (bool, error) {
+func (f *fsm) Member(id string) ([]byte, bool, error) {
 	f.Lock()
 	defer f.Unlock()
-	if data, ok := f.members[id]; ok {
-		err := member.UnmarshalFSM(data.Data)
-		if err != nil {
-			return false, errors.Wrap(err, "Error unmarshaling member")
-		}
-		return true, nil
+	if member, ok := f.members[id]; ok {
+		return member.Data, true, nil
 	}
-	return false, nil
+	return []byte{}, false, nil
 }
 
 // Members gives all the members of the cluster

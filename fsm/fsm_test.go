@@ -146,9 +146,12 @@ func TestRaceForLeader(t *testing.T) {
 	time.Sleep(time.Duration(fsm.leaderTTL / 2))
 
 	tl = &testLeader{}
-	ok, err := fsm.Leader(tl)
+	leaderData, ok, err := fsm.Leader()
 	assert.True(t, ok, "There should be a leader set at this point")
 	assert.NoError(t, err, "There should be no error querying the leader id")
+
+	tl.UnmarshalFSM(leaderData)
+	assert.NoError(t, err, "There should be no error unmarshalling")
 	assert.Equal(t, "1234", tl.UID)
 
 	tl = &testLeader{UID: "5678"}
@@ -159,9 +162,12 @@ func TestRaceForLeader(t *testing.T) {
 	time.Sleep(time.Duration(fsm.leaderTTL / 2))
 
 	tl = &testLeader{}
-	ok, err = fsm.Leader(tl)
+	leaderData, ok, err = fsm.Leader()
 	assert.NoError(t, err, "There should be no error querying for leader")
 	assert.True(t, ok, "There should still be a leader present")
+
+	err = tl.UnmarshalFSM(leaderData)
+	assert.NoError(t, err, "There should be no error unmarshalling")
 	assert.Equal(t, "1234", tl.UID, "The leader should remain what it was before")
 }
 
@@ -275,9 +281,12 @@ func TestForceLeader(t *testing.T) {
 
 		time.Sleep(time.Duration(time.Duration(tlb.TTL / 2)))
 		tl = &testLeader{}
-		ok, err := fsm.Leader(tl)
+		leaderData, ok, err := fsm.Leader()
 		assert.True(t, ok, "Should be a leader set right now")
 		assert.NoError(t, err, "Should be no error fetching current leader")
+
+		err = tl.UnmarshalFSM(leaderData)
+		assert.NoError(t, err, "Should be no error unmarshalling leader")
 		assert.Equal(t, "5678", tl.UID)
 	})
 
@@ -289,9 +298,11 @@ func TestForceLeader(t *testing.T) {
 
 		time.Sleep(500 * time.Millisecond)
 		tl = &testLeader{}
-		ok, err := fsm.Leader(tl)
+		leaderData, ok, err := fsm.Leader()
 		assert.True(t, ok, "Should be a leader set right now")
 		assert.NoError(t, err, "Should be no error fetching current leader")
+
+		err = tl.UnmarshalFSM(leaderData)
 		assert.Equal(t, "5678", tl.UID)
 	})
 }
@@ -371,9 +382,12 @@ func TestLeader(t *testing.T) {
 		fsm.Unlock()
 
 		tl = &testLeader{}
-		ok, err := fsm.Leader(tl)
+		leaderData, ok, err := fsm.Leader()
 		assert.True(t, ok, "There should be a leader since we just set it")
 		assert.NoError(t, err, "There should be no error retreiving the leader")
+
+		err = tl.UnmarshalFSM(leaderData)
+		assert.NoError(t, err, "Should be no error unmarshaling leader data")
 		assert.Equal(t, "1234", tl.UID)
 
 		fsm.Lock()
@@ -382,10 +396,10 @@ func TestLeader(t *testing.T) {
 	})
 
 	t.Run("Should not get leader back when not set", func(t *testing.T) {
-		tl := &testLeader{}
-		ok, err := fsm.Leader(tl)
+		_, ok, err := fsm.Leader()
 		assert.False(t, ok, "There should not be a leader since we just set it")
 		assert.NoError(t, err, "There should be no error retreiving the leader")
+
 	})
 }
 
@@ -586,9 +600,12 @@ func TestMember(t *testing.T) {
 		fsm.Unlock()
 
 		tm = &testMember{}
-		ok, err := fsm.Member(tmb.ID, tm)
+		memberData, ok, err := fsm.Member(tmb.ID)
 		assert.True(t, ok, "There should be a member since we just set it")
 		assert.NoError(t, err, "There should be no error retreiving the leader")
+
+		err = tm.UnmarshalFSM(memberData)
+		assert.NoError(t, err, "Should be no error unmarshaling member")
 		assert.Equal(t, "1234", tm.UID)
 
 		fsm.Lock()
@@ -597,8 +614,7 @@ func TestMember(t *testing.T) {
 	})
 
 	t.Run("Should not get member back when not set", func(t *testing.T) {
-		tm := &testMember{}
-		ok, err := fsm.Member("1234", tm)
+		_, ok, err := fsm.Member("1234")
 		assert.False(t, ok, "There should not be a leader since we just set it")
 		assert.NoError(t, err, "There should be no error retreiving the leader")
 	})

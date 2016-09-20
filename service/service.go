@@ -53,9 +53,6 @@ type SingleLeaderService interface {
 	FSMMemberFromBytes(data []byte) (fsm.Member, error)
 	FSMLeaderFromBytes(data []byte) (fsm.Leader, error)
 
-	FSMMemberTemplate() fsm.Member
-	FSMLeaderTemplate() fsm.Leader
-
 	IsHealthy() bool
 	IsRunning() bool
 	Ping() error // Check
