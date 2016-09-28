@@ -1,6 +1,8 @@
 loop_wait: 1000 #milliseconds
 data_dir: "data/postgres2" #canoe and pg data will go here
 api_port: 5002
+haproxy_status:
+        listen: 127.0.0.1:2347
 fsm:
   raft_port: 1236
   cluster_config_port: 1246
