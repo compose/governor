@@ -75,10 +75,13 @@ func singleFSMMemberHandler(singleFSM fsm.SingleLeaderFSM, singleService service
 				log.Error("Error sending error response")
 			}
 		}
-		member, err := singleService.FSMMemberFromBytes(memberData)
-		if err != nil {
-			if err := sendResponse(500, nil, []error{err}, w); err != nil {
-				log.Error("Error sending error response")
+		var member fsm.Member
+		if exists {
+			member, err = singleService.FSMMemberFromBytes(memberData)
+			if err != nil {
+				if err := sendResponse(500, nil, []error{err}, w); err != nil {
+					log.Error("Error sending error response")
+				}
 			}
 		}
 		if err := sendResponse(200, memberAPIResp{Member: member, Exists: exists}, []error{}, w); err != nil {
