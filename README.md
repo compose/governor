@@ -42,10 +42,11 @@ For an example file, see `postgres0.yml`.  Below is an explanation of settings:
 
 * *loop_wait*: the number of seconds the loop will sleep
 * *data_dir*: the data directory for both postgres and the state machine
+* *api_port*: port for the state API
 
 * *fsm*
   * *raft_port*: The port canoe uses to send raft-specific messages
-  * *api_port*: The port canoe uses to expose an API and manage cluster membership
+  * *cluster_config_port*: The port canoe uses to expose an API and manage cluster membership
   * *bootstrap_peers*: 
     * - List of peers in a cluster you wish to join.
   * *is_bootstrap*: Specifies if this is the single bootstrap node for the canoe cluster. For now - if true bootstrap_peers are ignored
@@ -85,6 +86,123 @@ Choosing your replication schema is dependent on the many business decisions.  I
 ## Applications should not use superusers
 
 When connecting from an application, always use a non-superuser. Governor requires access to the database to function properly.  By using a superuser from application, you can potentially use the entire connection pool, including the connections reserved for superusers with the `superuser_reserved_connections` setting. If Governor cannot access the Primary, because the connection pool is full, behavior will be undesireable.
+
+## State API
+
+We have built an API into governor for querying the state of the cluster from the perspective of a given node.
+There are 3 major endpoints named after the component they query on the backend: `ha`, `service`, and `fsm`
+
+### `/ha`
+
+#### GET `/ha/is_leader`
+
+Asks the HA component if the `fsm` says this node should be leader AND the `service` is running as a leader
+
+##### Resp
+```
+{
+	data: {
+		is_leader: bool,
+	},
+}
+```
+
+### `/fsm`
+
+#### GET `/fsm/id`
+
+Gets the ID of the FSM. This is unique - and corresponds to the id of the underlying [canoe](https://github.com/compose/canoe) node.
+
+##### Resp
+```
+{
+	data: {
+		id: uint64,
+	},
+}
+```
+
+#### GET `/fsm/leader`
+
+Retrieve the data for the current leader
+
+##### Resp
+```
+{
+	data: {
+		leader: LeaderStruct,
+		exists: bool,
+	},
+}
+```
+
+#### GET `/fsm/members`
+
+Retrieve the data for all members
+
+##### Resp
+```
+{
+	data: {
+		members: []MemberStruct,
+	},
+}
+```
+
+#### GET `/fsm/member/{member-id}`
+
+Retrieve the data for the given member
+
+##### Resp
+```
+{
+	data: {
+		member: MemberStruct,
+		exists: bool,
+	},
+}
+```
+
+### `/service`
+
+#### GET `/service/running_as_leader`
+
+Is the service configured to be running in a leader configuration
+
+##### Resp
+```
+{
+	data: {
+		running_as_leader: bool,
+	},
+}
+```
+
+#### GET `/service/is_running`
+
+Is the service running
+
+##### Resp
+```
+{
+	data: {
+		is_running: bool,
+	},
+}
+```
+
+#### GET `/service/is_healthy`
+
+Is the service healthy
+
+##### Resp
+```
+{
+	data: {
+		healthy: bool,
+	},
+}
+```
 
 ## External Requirements
 
