@@ -68,7 +68,7 @@ For an example file, see `postgres0.yml`.  Below is an explanation of settings:
 
 ## Replication choices
 
-Governor uses Postgres' streaming replication.  By default, this replication is asynchronous.  For more information, see the [Postgres documentation on streaming replication](http://www.postgresql.org/docs/current/static/warm-standby.html#STREAMING-REPLICATION). 
+Governor uses Postgres' streaming replication.  By default, this replication is asynchronous.  For more information, see the [Postgres documentation on streaming replication](http://www.postgresql.org/docs/current/static/warm-standby.html#STREAMING-REPLICATION).
 
 Governor's asynchronous replication configuration allows for `maximum_lag_on_failover` settings. This setting ensures failover will not occur if a follower is more than a certain number of bytes behind the follower.  This setting should be increased or decreased based on business requirements.
 
@@ -87,7 +87,7 @@ Choosing your replication schema is dependent on the many business decisions.  I
 
 ## Applications should not use superusers
 
-When connecting from an application, always use a non-superuser. Governor requires access to the database to function properly.  By using a superuser from application, you can potentially use the entire connection pool, including the connections reserved for superusers with the `superuser_reserved_connections` setting. If Governor cannot access the Primary, because the connection pool is full, behavior will be undesireable.
+When connecting from an application, always use a non-superuser. Governor requires access to the database to function properly.  By using a superuser from application, you can potentially use the entire connection pool, including the connections reserved for superusers with the `superuser_reserved_connections` setting. If Governor cannot access the Primary, because the connection pool is full, behavior will be undesirable.
 
 ## Requirements on a Mac
 
@@ -95,7 +95,7 @@ Run the following on a Mac to install requirements:
 
 ```
 brew install postgresql etcd haproxy libyaml python
-pip install psycopg2 pyyaml
+pip install psycopg2 pyyaml python-etcd
 ```
 
 ## Notice
