@@ -6,12 +6,34 @@ import base64
 import ssl
 import logging
 from urllib import urlencode
+from functools import wraps
 import helpers.errors
 import etcd
 import ast
 import urlparse
+import urllib3
 
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 logger = logging.getLogger(__name__)
+
+
+def retry(ExceptionToCheck, tries=4, delay=3, backoff=2):
+    def deco_retry(f):
+        @wraps(f)
+        def f_retry(*args, **kwargs):
+            mtries, mdelay = tries, delay
+            while mtries > 1:
+                try:
+                    return f(*args, **kwargs)
+                except ExceptionToCheck, e:
+                    msg = "%s, Retrying in %d seconds..." % (str(e), mdelay)
+                    logger.warning(msg)
+                    time.sleep(mdelay)
+                    mtries -= 1
+                    mdelay *= backoff
+            return f(*args, **kwargs)
+        return f_retry
+    return deco_retry
 
 
 class EtcdManager:
@@ -24,32 +46,14 @@ class EtcdManager:
             host=url.hostname or "localhost",
             port=url.port or 4001,
             protocol=url.scheme or "http",
-            version_prefix=config.get("version_prefix", "/v2")
+            version_prefix=config.get("version_prefix", "/v2"),
+            allow_reconnect=True
         )
         self.scope = config["scope"]
         self.ttl = config["ttl"]
 
-    def read(self, path, max_attempts=1, **kwargs):
-        attempts = 0
-        response = None
-        while True:
-            try:
-                response = self.client.read("/" + self.scope + path, **kwargs)
-                break
-            except (etcd.EtcdException, urllib3.exceptions.TimeoutError) as e:
-                attempts += 1
-                if attempts < max_attempts:
-                    logger.warning("Failed to return %s, trying again. (%s of %s)" % (path, attempts, max_attempts))
-                    time.sleep(3)
-                else:
-                    raise e
-        return response
-
-    def _value_to_dict(self, etcdresponse):
-        try:
-            return ast.literal_eval(etcdresponse.value)
-        except:
-            return etcdresponse.value
+    def read(self, path, **kwargs):
+        return self.client.read("/" + self.scope + path, **kwargs)
 
     def refresh(self, path, ttl):
         self.client.refresh("/" + self.scope + path, ttl=ttl)
@@ -57,33 +61,36 @@ class EtcdManager:
     def write(self, path, data, **kwargs):
         self.client.write("/" + self.scope + path, data, **kwargs)
 
+    def _value_to_dict(self, etcdresponse):
+        try:
+            return ast.literal_eval(etcdresponse.value)
+        except:
+            return etcdresponse.value
+
+    @retry((KeyError, helpers.errors.CurrentLeaderError))
     def current_leader(self):
         try:
             hostname = self._value_to_dict(self.read("/leader"))
-            address = self._value_to_dict(self.read("/members/%s" % hostname))
+            members = self.members()
+            address = members[hostname]
             return {"hostname": hostname, "address": address}
-        except etcd.EtcdException:
+        except (KeyError, etcd.EtcdException) as e:
             raise helpers.errors.CurrentLeaderError("Etcd is not responding properly")
 
+    @retry(etcd.EtcdException)
     def members(self):
         try:
-            members = []
-
+            members = {}
             r = self.read("/members", recursive=True)
             for node in r.leaves:
-                members.append({"hostname": node.key.split('/')[-1], "address": node.value})
+                members[node.key.split('/')[-1]] = node.value
             return members
         except etcd.EtcdException:
             raise helpers.errors.CurrentLeaderError("Etcd is not responding properly")
 
+    @retry(etcd.EtcdException)
     def write_member(self, member, connection_string):
         self.write("/members/{member}".format(member=member), connection_string, ttl=self.ttl)
-
-    def touch_member(self, member):
-        try:
-            self.refresh("/members/{member}".format(member=member), self.ttl)
-        except etcd.EtcdKeyNotFound:
-            logger.error("Tried touching non-existent member")
 
     def take_leader(self, value):
         try:
@@ -93,6 +100,7 @@ class EtcdManager:
             logger.error("Error taking leader.")
             return False
 
+    @retry(etcd.EtcdException)
     def attempt_to_acquire_leader(self, value):
         try:
             return self.write("/leader", value, ttl=self.ttl, prevExist=False)

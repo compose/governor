@@ -148,16 +148,16 @@ class Postgresql:
         if (state_store.last_leader_operation() - self.xlog_position()) > self.config["maximum_lag_on_failover"]:
             return False
 
-        for member in state_store.members():
-            if member["hostname"] == self.name:
+        for hostname, address in state_store.members().iteritems():
+            if hostname == self.name:
                 continue
             try:
-                member_conn = psycopg2.connect(member["address"])
+                member_conn = psycopg2.connect(address)
                 member_conn.autocommit = True
                 member_cursor = member_conn.cursor()
                 member_cursor.execute("SELECT %s - (pg_last_xlog_replay_location() - '0/000000'::pg_lsn) AS bytes;" % self.xlog_position())
                 xlog_diff = member_cursor.fetchone()[0]
-                logger.info([self.name, member["hostname"], xlog_diff])
+                logger.info([self.name, hostname, xlog_diff])
                 if xlog_diff < 0:
                     member_cursor.close()
                     return False
