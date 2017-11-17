@@ -1,3 +1,6 @@
+# Governor has been deprecated.
+Compose are no longer maintaining Governor as an active project. We are pleased to say that Governor seeded the [Patroni](https://github.com/zalando/patroni) project which Compose has now adopted as their HA solution. We recommend it to anyone seeking similar functionality to Governor. We have archived the project on GitHub; you are free to use it and fork it, but we will not be accepting issues or pull requests.
+
 # Governor: A Template for PostgreSQL HA with etcd
 
 *There are many ways to run high availability with PostgreSQL; here we present a template for you to create your own custom fit high availability solution using etcd and python for maximum accessibility.*
